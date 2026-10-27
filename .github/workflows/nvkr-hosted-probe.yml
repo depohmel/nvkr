@@ -1,0 +1,70 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+---
+# Diagnostic branch only. Probe steps are copied from nvkr-nightly.yml at c7f1a712.
+name: Hosted ARM64 capability probe
+'on':
+  push:
+    branches: [codex/hosted-arm64-probe]
+permissions: {}
+concurrency:
+  group: nvkr-hosted-arm64-probe
+  cancel-in-progress: true
+jobs:
+  probe:
+    if: github.repository == 'depohmel/nvkr'
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 15
+    permissions: {}
+    steps:
+      - name: Check native ARM64 VM host capacity
+        env:
+          SOURCE_CONTRACT_ONLY: "false"
+        run: |
+          set -euo pipefail
+          if [[ "$SOURCE_CONTRACT_ONLY" == true ]]; then
+            echo '::error::Select only one diagnostic mode.'
+            exit 1
+          fi
+          failed=0
+          if [[ $(uname -s) != Linux || $(uname -m) != aarch64 ]]; then
+            echo '::error::The VM suite requires native Linux ARM64.'
+            failed=1
+          fi
+          available_mib=$(awk '/^MemAvailable:/ {print int($2 / 1024)}' /proc/meminfo)
+          disk_mib=$(df -Pm "$RUNNER_TEMP" | awk 'NR == 2 {print $4}')
+          printf 'Available RAM: %s MiB; free disk: %s MiB\n' "$available_mib" "$disk_mib"
+          # Match the existing candidate suite admission thresholds.
+          if [[ -z "$available_mib" || "$available_mib" -lt 24576 ]]; then
+            echo '::error::The VM suite requires at least 24576 MiB available RAM.'
+            failed=1
+          fi
+          if [[ -z "$disk_mib" || "$disk_mib" -lt 92160 ]]; then
+            echo '::error::The VM suite requires at least 92160 MiB free disk.'
+            failed=1
+          fi
+          if [[ ! -c /dev/kvm || ! -r /dev/kvm || ! -w /dev/kvm ]]; then
+            echo '::error::The VM suite requires a readable and writable /dev/kvm device.'
+            failed=1
+          elif ! (exec 3<>/dev/kvm); then
+            echo '::error::The runner cannot open /dev/kvm.'
+            failed=1
+          fi
+          exit "$failed"
+      - name: Verify actual KVM initialization
+        run: |
+          set -euo pipefail
+          if ! command -v qemu-system-aarch64 >/dev/null; then
+            sudo -n timeout --kill-after=10s 180s apt-get -o Acquire::Retries=2 -o Acquire::http::Timeout=30 update
+            sudo -n timeout --kill-after=10s 300s apt-get -o Acquire::Retries=2 -o Acquire::http::Timeout=30 install --no-install-recommends -y qemu-system-arm
+          fi
+          # A paused empty machine tests KVM initialization, without a product disk or TCG fallback.
+          if ! printf 'info status\nquit\n' | timeout --kill-after=5s 30s qemu-system-aarch64 \
+            -machine virt,accel=kvm -cpu host -m 256 -nodefaults -nographic \
+            -S -monitor stdio -serial none > "$RUNNER_TEMP/nightly-kvm-probe.log" 2>&1; then
+            cat "$RUNNER_TEMP/nightly-kvm-probe.log"
+            exit 1
+          fi
+          cat "$RUNNER_TEMP/nightly-kvm-probe.log"
+          grep -Fq 'VM status: paused' "$RUNNER_TEMP/nightly-kvm-probe.log"
+          echo 'Hosted capacity and KVM initialization passed; full E2E remains untested.'
