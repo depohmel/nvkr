@@ -3163,8 +3163,10 @@ trusted pinned code with sudo and Docker access under the parent's UID, includin
 root-equivalent access to its read-only job token. Environment scrubbing is not
 an independent sandbox, and self-written verdicts are unsigned diagnostics.
 
-The two maintained profiles select native ARM64 KVM guests and explicit NVIDIA-fork
-or upstream OVN. Selection validates these capabilities and exact suite revisions;
+The maintained nightly profile selects native ARM64 KVM guests and NVIDIA-fork
+OVN. Scheduled and manual `all` selection exclude upstream OVN; its generated
+producer remains available for separate manual diagnostics. Selection validates
+these capabilities and exact suite revisions;
 there is no caller-supplied security approval marker. ADR-13 keeps artifact vulnerability
 scanning and clearance outside v1; the existing repository vulnerability gate is unchanged.
 The chart sources replace the local-only image ID with the existing registry-addressable
@@ -3186,8 +3188,8 @@ checked against the exact selected Artifact. Focused contract and HTTP race test
 passed for the preceding beta selection, and that CLI validated and rendered the diagnostic site spec. Those checks do not validate the current v0.22.0 source.
 The user-approved test-only suite pin is `b4f90e2c4fc4ed3d07efc18a22066a7e0b9b99c8`,
 a signed compatibility revision of the earlier `a3206710` suite, with beta.6 deployment
-templates and an explicit stack-config/credential/telemetry handoff. Both independently
-authored nightly profiles retain this harness pin and its candidate entrypoint, which
+templates and an explicit stack-config/credential/telemetry handoff. The maintained
+nightly profile retains this harness pin and its candidate entrypoint, which
 is absent from the selected v0.22.0 product source. The [hosted source-contract Run](https://github.com/dsx-ai-factory/nvkr/actions/runs/39487106857/attempts/1)
 on NVKR `8df540b83aeaec5e27b865dcd65887882699755b` passed the actual
 candidate render function with the beta.6 CLI and the hook argv/environment

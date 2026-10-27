@@ -12,7 +12,9 @@ project Definitions, named generated producer workflows, exact suite revisions
 and runtime profiles. Each project selects its own complete output set. The
 ordinary generated M2 workflow retains its default paths; named bundles use the
 existing generator and manifest owner. The coordinator is authored separately.
-The daily trigger is retained as explicitly requested by the user.
+The daily trigger selects NVIDIA-fork OVN only, including manual `all` dispatches.
+The upstream OVN producer remains available for separate manual diagnostics outside
+this coordinator. The daily trigger is retained as explicitly requested by the user.
 
 Binary carriers, source handoffs, OCI images, charts and disks use private CI storage under
 `ghcr.io/dsx-ai-factory/nvkr/ci-artifacts`; Actions retain only their small location-and-digest records.
@@ -34,7 +36,7 @@ successful hosted transfer or public-repository readiness. Provider locator rete
 private carrier blobs; registry retention is separate. The public runtime attachment contains the constructed
 `cycle.json` summary only; raw suite reports are not attached.
 
-Both nightly Environments opt into runtime Plan preparation. Each producer's first bootstrap reads the
+The NVIDIA nightly Environment opts into runtime Plan preparation. The producer's first bootstrap reads the
 current catalog pins from that dispatch's exact repository commit and freezes fresh Plan data. Other
 helper bootstraps restore the same data and verify it against those inputs; every producer job and the
 finalizer then receives it with its native helper. Source-version updates within the reviewed execution
@@ -51,13 +53,26 @@ a successful combined cycle and its runtime cleanup verdict remain unrecorded.
 
 ## Runtime and tool bindings
 
-The two initial profiles select NVIDIA-fork OVN and upstream OVN ARM64 candidates
+The manual `hosted_preflight_only` mode probes `ubuntu-24.04-arm`, the same
+GitHub-hosted label used by the generated ARM64 builds. It can run from a fork
+without secrets, source checkout, product builds or artifact uploads. It requires
+24 GiB available memory, 90 GiB free disk and accessible KVM before attempting
+to initialize a paused QEMU machine with KVM acceleration. It fails if these
+requirements are missing; it does not substitute software emulation. Select
+this mode independently of `source_contract_only`.
+
+This diagnostic has no recorded hosted result. Even a passing probe establishes
+only host capacity and KVM initialization, not the suite's networking, toolchain
+or full deployment and cleanup. The full runtime job retains `arc-arm64-kvm`
+until a hosted runtime route has been exercised.
+
+The maintained nightly profile selects the NVIDIA-fork OVN ARM64 candidate
 for kind management plus real KVM tenant VMs. Selection validates the maintained
 profile, exact suite revision, native runtime target and network. There is no
 self-declared security approval field. Artifact authentication, source matching,
 native-host preflight and owned-resource cleanup remain required.
 
-Both Definitions select the profile-owned site catalog at NVKE `v0.22.0`,
+The nightly Definition selects the profile-owned site catalog at NVKE `v0.22.0`,
 commit `400c24fb6465b042be883d6b62472528520d6291`, for the CLI, controller image,
 controller chart and NKTP chart. The test-only suite checkout selects
 `b4f90e2c4fc4ed3d07efc18a22066a7e0b9b99c8`.

@@ -12,6 +12,10 @@ name: NVKR nightly NVKE end-to-end tests
         description: Validate the pinned nightly handoff without builds or VM deployment
         type: boolean
         default: false
+      hosted_preflight_only:
+        description: Probe the upstream GitHub-hosted ARM64 runner without product artifacts
+        type: boolean
+        default: false
       profile:
         description: Maintained nightly project to build and test
         type: choice
@@ -20,7 +24,6 @@ name: NVKR nightly NVKE end-to-end tests
         options:
           - all
           - nvke-nightly-arm64
-          - nvke-nightly-upstream-ovn-arm64
 
 permissions:
   contents: read
@@ -30,8 +33,66 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  hosted-preflight:
+    if: github.event_name == 'workflow_dispatch' && inputs.hosted_preflight_only
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 15
+    permissions: {}
+    steps:
+      - name: Check native ARM64 VM host capacity
+        env:
+          SOURCE_CONTRACT_ONLY: ${{ inputs.source_contract_only }}
+        run: |
+          set -euo pipefail
+          if [[ "$SOURCE_CONTRACT_ONLY" == true ]]; then
+            echo '::error::Select only one diagnostic mode.'
+            exit 1
+          fi
+          failed=0
+          if [[ $(uname -s) != Linux || $(uname -m) != aarch64 ]]; then
+            echo '::error::The VM suite requires native Linux ARM64.'
+            failed=1
+          fi
+          available_mib=$(awk '/^MemAvailable:/ {print int($2 / 1024)}' /proc/meminfo)
+          disk_mib=$(df -Pm "$RUNNER_TEMP" | awk 'NR == 2 {print $4}')
+          printf 'Available RAM: %s MiB; free disk: %s MiB\n' "$available_mib" "$disk_mib"
+          # Match the existing candidate suite admission thresholds.
+          if [[ -z "$available_mib" || "$available_mib" -lt 24576 ]]; then
+            echo '::error::The VM suite requires at least 24576 MiB available RAM.'
+            failed=1
+          fi
+          if [[ -z "$disk_mib" || "$disk_mib" -lt 92160 ]]; then
+            echo '::error::The VM suite requires at least 92160 MiB free disk.'
+            failed=1
+          fi
+          if [[ ! -c /dev/kvm || ! -r /dev/kvm || ! -w /dev/kvm ]]; then
+            echo '::error::The VM suite requires a readable and writable /dev/kvm device.'
+            failed=1
+          elif ! (exec 3<>/dev/kvm); then
+            echo '::error::The runner cannot open /dev/kvm.'
+            failed=1
+          fi
+          exit "$failed"
+      - name: Verify actual KVM initialization
+        run: |
+          set -euo pipefail
+          if ! command -v qemu-system-aarch64 >/dev/null; then
+            sudo -n timeout --kill-after=10s 180s apt-get -o Acquire::Retries=2 -o Acquire::http::Timeout=30 update
+            sudo -n timeout --kill-after=10s 300s apt-get -o Acquire::Retries=2 -o Acquire::http::Timeout=30 install --no-install-recommends -y qemu-system-arm
+          fi
+          # A paused empty machine tests KVM initialization, without a product disk or TCG fallback.
+          if ! printf 'info status\nquit\n' | timeout --kill-after=5s 30s qemu-system-aarch64 \
+            -machine virt,accel=kvm -cpu host -m 256 -nodefaults -nographic \
+            -S -monitor stdio -serial none > "$RUNNER_TEMP/nightly-kvm-probe.log" 2>&1; then
+            cat "$RUNNER_TEMP/nightly-kvm-probe.log"
+            exit 1
+          fi
+          cat "$RUNNER_TEMP/nightly-kvm-probe.log"
+          grep -Fq 'VM status: paused' "$RUNNER_TEMP/nightly-kvm-probe.log"
+          echo 'Hosted capacity and KVM initialization passed; full E2E remains untested.'
+
   source-contract:
-    if: github.event_name == 'workflow_dispatch' && inputs.source_contract_only && github.repository == 'dsx-ai-factory/nvkr'
+    if: github.event_name == 'workflow_dispatch' && inputs.source_contract_only && !inputs.hosted_preflight_only && github.repository == 'dsx-ai-factory/nvkr'
     runs-on: ubuntu-24.04
     timeout-minutes: 25
     steps:
@@ -84,7 +145,7 @@ jobs:
           go test . -run '^TestUnit_CandidateStackConfigurationHandoff$' -count=1 -timeout=2m
 
   select:
-    if: github.repository == 'dsx-ai-factory/nvkr' && github.ref == 'refs/heads/main' && !inputs.source_contract_only
+    if: github.repository == 'dsx-ai-factory/nvkr' && github.ref == 'refs/heads/main' && !inputs.source_contract_only && !inputs.hosted_preflight_only
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     outputs:
@@ -108,11 +169,10 @@ jobs:
           matrix=$(jq -ce --arg profile "$PROFILE" '
             [.[] | select($profile == "all" or .name == $profile)] |
             if length > 0 and all(.[];
-              (.name == "nvke-nightly-arm64" or
-                .name == "nvke-nightly-upstream-ovn-arm64") and
+              .name == "nvke-nightly-arm64" and
               (.harness_commit | test("^[0-9a-f]{40}$")) and
               .runtime_target == "native-arm64-vm" and
-              (.network == "ovn" or .network == "upstream-ovn")) and
+              .network == "ovn") and
               (map(.name) | length == (unique | length)) then
               {include: map({name, harness_commit})}
             else error("invalid maintained nightly profile") end
@@ -186,7 +246,7 @@ jobs:
           profiles=$(jq -er '
             if (.include | type) == "array" and (.include | length) > 0 and
               all(.include[];
-                (.name == "nvke-nightly-arm64" or .name == "nvke-nightly-upstream-ovn-arm64") and
+                .name == "nvke-nightly-arm64" and
                 (.harness_commit | test("^[0-9a-f]{40}$"))) and
               (.include | map(.name) | length == (unique | length)) then
               .include[].name
