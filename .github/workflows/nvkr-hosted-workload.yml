@@ -10,18 +10,27 @@ name: Measure actual AMD64 builds on standard hosted runners
       - .github/workflows/nvkr-hosted-workload.yml
       - scripts/ci-measure-workload.sh
   workflow_dispatch:
+    inputs:
+      stage:
+        description: Actual workload to measure
+        type: choice
+        default: both
+        options: [both, source, disk]
 
 permissions:
   contents: read
 
 concurrency:
-  group: hosted-amd64-workload-${{ github.ref }}
+  group: hosted-amd64-workload-${{ github.ref }}-${{ github.sha }}
   cancel-in-progress: false
 
 # Workload sizing experiments only. No publication, signing, Actions caches or
 # artifact uploads. Product payloads remain on disposable runner disks.
 jobs:
   source-build:
+    # The initial branch push already started compilation. Follow-up pushes
+    # iterate only the disk job; dispatch can explicitly repeat either stage.
+    if: github.event_name == 'workflow_dispatch' && inputs.stage != 'disk'
     name: Actual pinned NVKR source compilation
     runs-on: ubuntu-24.04
     timeout-minutes: 90
@@ -57,6 +66,7 @@ jobs:
               -test.run '^TestNVKEOSPublicSourcesLive$' -test.v -test.timeout 75m
 
   disk-build:
+    if: github.event_name == 'push' || inputs.stage != 'source'
     name: Actual pinned NVKE QCOW2 build using KVM
     runs-on: ubuntu-24.04
     timeout-minutes: 180
@@ -83,6 +93,10 @@ jobs:
           nproc
           free -m
           df -Pm .
+      - name: Set up container-backed Buildx for archive export
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+        with:
+          driver: docker-container
       - name: Build and natively validate the existing local Packer toolchain
         id: toolchain
         run: |
