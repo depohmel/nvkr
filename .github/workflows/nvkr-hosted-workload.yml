@@ -67,9 +67,9 @@ jobs:
 
   disk-build:
     if: github.event_name == 'push' || inputs.stage != 'source'
-    name: Actual pinned NVKE QCOW2 build using KVM
+    name: Actual pinned NVKE QCOW2 build and VM E2E using KVM
     runs-on: ubuntu-24.04
-    timeout-minutes: 180
+    timeout-minutes: 360
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -156,3 +156,56 @@ jobs:
             --volume "$disk:/disk.qcow2:ro" --entrypoint qemu-img "$TOOLCHAIN_IMAGE" info /disk.qcow2
           docker run --rm --network none --read-only \
             --volume "$disk:/disk.qcow2:ro" --entrypoint qemu-img "$TOOLCHAIN_IMAGE" check /disk.qcow2
+      - name: Check out the exact compatible local-disk harness
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: depohmel/nvke
+          ref: 6b18565e66024287880eacd2c7afdb103c53fdc5
+          path: harness
+          persist-credentials: false
+      - name: Stage only the compatible test scripts
+        run: |
+          set -euo pipefail
+          for script in nico-vms-e2e.sh nico-vms-os-image.sh nvkectl-smoke.sh; do
+            install -m 0755 "harness/controller/hack/ci/$script" "nvke/controller/hack/ci/$script"
+          done
+          echo 'Product components remain at 400c24fb6465b042be883d6b62472528520d6291; compatible test scripts are selected separately.'
+          git -C nvke status --short
+      - name: Set up pinned NVKR Go for the existing seed projection
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: .go-version
+          cache: false
+      - name: Retain the nightly's actual guest configuration
+        env:
+          GOTOOLCHAIN: local
+          NVKR_MEASURE_SEED_ROOT: ${{ github.workspace }}/nvke/controller/nico-sim
+        run: go test ./internal/nvkedemo -run '^TestHostedVMMeasurementSeed$' -count=1 -v -timeout=5m
+      - name: Set up pinned NVKE Go for source-built VM E2E
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: nvke/go.work
+          cache: false
+      - name: Run actual kind and KVM VM Go E2E and cleanup
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          TOOLCHAIN_IMAGE: ${{ steps.toolchain.outputs.image }}
+        run: |
+          set -euo pipefail
+          disk="$GITHUB_WORKSPACE/nvke/os-image/packer/output-non-fde/nvke-node-non-fde-ubuntu-26.04.1-amd64.qcow2"
+          bash scripts/ci-measure-workload.sh \
+            bash scripts/ci-hosted-vm-e2e.sh "$GITHUB_WORKSPACE/nvke" "$disk" "$TOOLCHAIN_IMAGE"
+      - name: Record final aggregate resource counters
+        if: always()
+        run: |
+          set -euo pipefail
+          free -m
+          df -Pm .
+          for counter in memory.current memory.peak memory.events memory.swap.current memory.pressure; do
+            printf '%s: ' "$counter"
+            if [[ -r "/sys/fs/cgroup/$counter" ]]; then
+              cat "/sys/fs/cgroup/$counter"
+            else
+              echo 'not exposed by this runner'
+            fi
+          done
