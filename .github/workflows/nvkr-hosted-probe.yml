@@ -1,8 +1,8 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 ---
-# Diagnostic branch only. Probe steps are copied from nvkr-nightly.yml at c7f1a712.
-name: Hosted ARM64 capability probe
+# Diagnostic branch only. No product inputs, credentials or artifact uploads.
+name: Hosted VM capability probe
 'on':
   push:
     branches: [codex/hosted-arm64-probe]
@@ -13,22 +13,35 @@ concurrency:
 jobs:
   probe:
     if: github.repository == 'depohmel/nvkr'
-    runs-on: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
     timeout-minutes: 15
     permissions: {}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-24.04-arm
+            arch: aarch64
+            qemu: qemu-system-aarch64
+            package: qemu-system-arm
+            machine: virt
+          - runner: ubuntu-24.04
+            arch: x86_64
+            qemu: qemu-system-x86_64
+            package: qemu-system-x86
+            machine: q35
+    env:
+      PROBE_ARCH: ${{ matrix.arch }}
+      PROBE_QEMU: ${{ matrix.qemu }}
+      PROBE_PACKAGE: ${{ matrix.package }}
+      PROBE_MACHINE: ${{ matrix.machine }}
     steps:
-      - name: Check native ARM64 VM host capacity
-        env:
-          SOURCE_CONTRACT_ONLY: "false"
+      - name: Check native VM host capacity
         run: |
           set -euo pipefail
-          if [[ "$SOURCE_CONTRACT_ONLY" == true ]]; then
-            echo '::error::Select only one diagnostic mode.'
-            exit 1
-          fi
           failed=0
-          if [[ $(uname -s) != Linux || $(uname -m) != aarch64 ]]; then
-            echo '::error::The VM suite requires native Linux ARM64.'
+          if [[ $(uname -s) != Linux || $(uname -m) != "$PROBE_ARCH" ]]; then
+            echo '::error::The probe requires the selected native Linux architecture.'
             failed=1
           fi
           available_mib=$(awk '/^MemAvailable:/ {print int($2 / 1024)}' /proc/meminfo)
@@ -43,28 +56,38 @@ jobs:
             echo '::error::The VM suite requires at least 92160 MiB free disk.'
             failed=1
           fi
-          if [[ ! -c /dev/kvm || ! -r /dev/kvm || ! -w /dev/kvm ]]; then
-            echo '::error::The VM suite requires a readable and writable /dev/kvm device.'
-            failed=1
-          elif ! (exec 3<>/dev/kvm); then
-            echo '::error::The runner cannot open /dev/kvm.'
-            failed=1
-          fi
           exit "$failed"
       - name: Verify actual KVM initialization
+        # Inspect KVM even if capacity failed; that failure still fails the job.
+        if: ${{ !cancelled() }}
         run: |
           set -euo pipefail
-          if ! command -v qemu-system-aarch64 >/dev/null; then
+          if [[ $(uname -s) != Linux || $(uname -m) != "$PROBE_ARCH" ]]; then
+            echo '::error::The probe requires the selected native Linux architecture.'
+            exit 1
+          fi
+          if [[ ! -c /dev/kvm ]]; then
+            echo '::error::No /dev/kvm device exists on this runner.'
+            exit 1
+          fi
+          ls -l /dev/kvm
+          # This disposable VM has no product inputs or credentials.
+          sudo -n chmod 666 /dev/kvm
+          if ! (exec 3<>/dev/kvm); then
+            echo '::error::The runner cannot open /dev/kvm after granting access.'
+            exit 1
+          fi
+          if ! command -v "$PROBE_QEMU" >/dev/null; then
             sudo -n timeout --kill-after=10s 180s apt-get -o Acquire::Retries=2 -o Acquire::http::Timeout=30 update
-            sudo -n timeout --kill-after=10s 300s apt-get -o Acquire::Retries=2 -o Acquire::http::Timeout=30 install --no-install-recommends -y qemu-system-arm
+            sudo -n timeout --kill-after=10s 300s apt-get -o Acquire::Retries=2 -o Acquire::http::Timeout=30 install --no-install-recommends -y "$PROBE_PACKAGE"
           fi
           # A paused empty machine tests KVM initialization, without a product disk or TCG fallback.
-          if ! printf 'info status\nquit\n' | timeout --kill-after=5s 30s qemu-system-aarch64 \
-            -machine virt,accel=kvm -cpu host -m 256 -nodefaults -nographic \
+          if ! printf 'info status\nquit\n' | timeout --kill-after=5s 30s "$PROBE_QEMU" \
+            -machine "$PROBE_MACHINE,accel=kvm" -cpu host -m 256 -nodefaults -nographic \
             -S -monitor stdio -serial none > "$RUNNER_TEMP/nightly-kvm-probe.log" 2>&1; then
             cat "$RUNNER_TEMP/nightly-kvm-probe.log"
             exit 1
           fi
           cat "$RUNNER_TEMP/nightly-kvm-probe.log"
           grep -Fq 'VM status: paused' "$RUNNER_TEMP/nightly-kvm-probe.log"
-          echo 'Hosted capacity and KVM initialization passed; full E2E remains untested.'
+          echo 'KVM initialization passed. See the separate capacity result; full E2E remains untested.'
