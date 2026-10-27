@@ -98,13 +98,33 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p "$RUNNER_TEMP/packer-home"
+          # Match the native toolchain owner's UID/GID projection. ssh-keygen
+          # requires a passwd entry even when Docker accepts a numeric UID.
+          printf 'root:x:0:0:root:/root:/bin/sh\nnvkr:x:%s:%s:NVKR Builder:/work:/bin/sh\n' \
+            "$(id -u)" "$(id -g)" > "$RUNNER_TEMP/packer-home/passwd"
+          printf 'root:x:0:\nnvkr:x:%s:\n' "$(id -g)" > "$RUNNER_TEMP/packer-home/group"
+          chmod 0400 "$RUNNER_TEMP/packer-home/passwd" "$RUNNER_TEMP/packer-home/group"
+          # The source-owned NVIDIA OVN package build requires Buildx. Reuse
+          # the disposable host daemon without mounting registry credentials.
+          docker_cli=$(command -v docker)
+          buildx=$(docker info --format '{{range .ClientInfo.Plugins}}{{if eq .Name "buildx"}}{{.Path}}{{end}}{{end}}')
+          test -x "$docker_cli"
+          test -x "$buildx"
+          test -S /var/run/docker.sock
           bash scripts/ci-measure-workload.sh \
             docker run --rm --device /dev/kvm --network host \
               --user "$(id -u):$(id -g)" \
+              --group-add "$(stat -c %g /var/run/docker.sock)" \
               --volume "$GITHUB_WORKSPACE/nvke:/src" \
               --volume "$RUNNER_TEMP/packer-home:/work" \
+              --volume "$RUNNER_TEMP/packer-home/passwd:/etc/passwd:ro" \
+              --volume "$RUNNER_TEMP/packer-home/group:/etc/group:ro" \
+              --volume "$docker_cli:/usr/local/bin/docker:ro" \
+              --volume "$buildx:/usr/local/lib/docker/cli-plugins/docker-buildx:ro" \
+              --volume /var/run/docker.sock:/var/run/docker.sock \
               --workdir /src/os-image/packer \
               --env HOME=/work --env CHECKPOINT_DISABLE=1 \
+              --env DOCKER_CONFIG=/work/.docker \
               --env PACKER_PLUGIN_PATH=/nvkr/toolchain/packer/plugins \
               --entrypoint make "$TOOLCHAIN_IMAGE" \
                 os-image-non-fde ARCH=amd64 ACCELERATOR=kvm REQUIRE_ACCELERATION=1 \
