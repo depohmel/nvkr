@@ -97,6 +97,7 @@ jobs:
         uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
         with:
           driver: docker-container
+          cache-binary: false
       - name: Build and natively validate the existing local Packer toolchain
         id: toolchain
         run: |
