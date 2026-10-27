@@ -75,6 +75,39 @@ func nightlyCoordinatorFixture(t *testing.T) (nightlyCoordinatorDocument, []map[
 	return workflow, profiles
 }
 
+func TestNightlyHostedPreflightCannotBuildOrPublish(t *testing.T) {
+	workflow, _ := nightlyCoordinatorFixture(t)
+	probe := workflow.Jobs["hosted-preflight"]
+	if probe.RunsOn != "ubuntu-24.04-arm" || probe.TimeoutMinutes != 15 ||
+		probe.If != "github.event_name == 'workflow_dispatch' && inputs.hosted_preflight_only" ||
+		probe.Environment != "" || len(probe.Needs) != 0 || probe.Permissions == nil || len(probe.Permissions) != 0 {
+		t.Fatal("hosted probe must be an isolated, manual, unprivileged hosted job")
+	}
+	for _, step := range probe.Steps {
+		if step.Uses != "" || strings.Contains(step.Run, "secrets.") || strings.Contains(step.Run, "github.token") {
+			t.Fatal("hosted probe must not check out product sources, use credentials or upload artifacts")
+		}
+	}
+	if len(probe.Steps) != 2 || !strings.Contains(probe.Steps[0].Run, "/dev/kvm") ||
+		!strings.Contains(probe.Steps[1].Run, "virt,accel=kvm") ||
+		!strings.Contains(probe.Steps[1].Run, "VM status: paused") {
+		t.Fatal("hosted probe must require accessible KVM and verify actual QEMU initialization")
+	}
+	for _, job := range []string{"select", "source-contract"} {
+		if !strings.Contains(workflow.Jobs[job].If, "!inputs.hosted_preflight_only") {
+			t.Fatalf("%s must not run during the hosted capability probe", job)
+		}
+	}
+	// Exercise the authored conflict gate before host inspection or package installation.
+	root := t.TempDir()
+	command := exec.CommandContext(t.Context(), "bash", "-c", probe.Steps[0].Run)
+	command.Env = []string{"PATH=" + os.Getenv("PATH"), "SOURCE_CONTRACT_ONLY=true", "RUNNER_TEMP=" + root}
+	log, err := command.CombinedOutput()
+	if err == nil || !strings.Contains(string(log), "Select only one diagnostic mode.") {
+		t.Fatalf("conflicting diagnostic modes were not rejected: %v %s", err, log)
+	}
+}
+
 func TestNightlyCoordinatorMaintainsExplicitProducerAndRuntimeBoundary(t *testing.T) {
 	workflow, profiles := nightlyCoordinatorFixture(t)
 	if len(workflow.On) != 2 || workflow.On["schedule"] == nil || workflow.On["workflow_dispatch"] == nil ||
@@ -117,10 +150,13 @@ func TestNightlyCoordinatorMaintainsExplicitProducerAndRuntimeBoundary(t *testin
 				step.With["path"] == "${{ runner.temp }}/nightly-reports-${{ matrix.name }}/cycle.json"
 		}
 	}
-	if !executed || !checkedSource || !publicUpload || len(profiles) != 2 {
+	if !executed || !checkedSource || !publicUpload || len(profiles) != 1 {
 		t.Fatal("nightly omitted real suite execution, exact source or private/public report separation")
 	}
 	for _, profile := range profiles {
+		if profile["name"] != "nvke-nightly-arm64" || profile["network"] != "ovn" {
+			t.Fatal("nightly must select NVIDIA OVN")
+		}
 		input, err := definition.LoadDefinition(t.Context(), filepath.Join("../..", profile["definition"]))
 		if err != nil {
 			t.Fatal(err)
@@ -181,8 +217,11 @@ func TestNightlyCoordinatorSelectionFailsClosedBeforeDispatch(t *testing.T) {
 		mutation  string
 		want      int
 	}{
-		{"maintained all", "all", "", 2},
+		{"maintained all", "all", "", 1},
 		{"maintained one", "nvke-nightly-arm64", "", 1},
+		{"retired upstream", "nvke-nightly-upstream-ovn-arm64", "", 0},
+		{"stale two-profile schedule", "all", "upstream profile", 0},
+		{"upstream network substituted", "all", "upstream network", 0},
 		{"unknown", "unknown", "", 0},
 		{"unreviewed harness", "all", "harness_commit", 0},
 		{"unsupported runtime", "all", "runtime_target", 0},
@@ -200,6 +239,13 @@ func TestNightlyCoordinatorSelectionFailsClosedBeforeDispatch(t *testing.T) {
 			}
 			if test.mutation == "duplicate" {
 				fixture = append(fixture, fixture[0])
+			} else if test.mutation == "upstream profile" {
+				fixture = append(fixture, map[string]string{
+					"name": "nvke-nightly-upstream-ovn-arm64", "network": "upstream-ovn",
+					"runtime_target": profiles[0]["runtime_target"], "harness_commit": profiles[0]["harness_commit"],
+				})
+			} else if test.mutation == "upstream network" {
+				fixture[0]["network"] = "upstream-ovn"
 			} else if test.mutation != "" {
 				fixture[0][test.mutation] = "unsupported"
 			}
@@ -269,7 +315,7 @@ func TestNightlyRuntimeSelectionDoesNotAllocateUnavailableCandidates(t *testing.
 	}{
 		{"no locator", 0, "", false},
 		{"one completed project", 1, "", false},
-		{"both completed projects", 2, "", false},
+		{"retired upstream matrix", 1, "upstream", true},
 		{"wrong source", 1, "sha", true},
 		{"expired locator", 1, "expired", true},
 		{"duplicate locator", 1, "duplicate", true},
@@ -287,7 +333,6 @@ for argument in "$@"; do
   if [[ "$argument" == repos/* ]]; then
     case "$argument" in
       *name=nightly-build-nvke-nightly-arm64-101-3\&per_page=100) cat "$FAKE_GH_ROOT/0.json"; exit ;;
-      *name=nightly-build-nvke-nightly-upstream-ovn-arm64-101-3\&per_page=100) cat "$FAKE_GH_ROOT/1.json"; exit ;;
       *) exit 99 ;;
     esac
   fi
@@ -317,8 +362,11 @@ exit 99
 				}
 				fixtureJSON(t, filepath.Join(root, string(rune('0'+i))+".json"), map[string]any{"total_count": len(artifacts), "artifacts": artifacts})
 			}
-			if test.mutation == "matrix" {
+			switch test.mutation {
+			case "matrix":
 				matrix[0]["name"] = "foreign"
+			case "upstream":
+				matrix[0]["name"] = "nvke-nightly-upstream-ovn-arm64"
 			}
 			raw, err := json.Marshal(map[string]any{"include": matrix})
 			if err != nil {
