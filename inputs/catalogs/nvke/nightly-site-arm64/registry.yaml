@@ -154,7 +154,7 @@ components:
     artifactPath: charts/nvke-controller-nightly.tgz
     writeDir: charts
     versionStamp:
-      BUILD_VERSION: '0.0.0-nightly+{{.Commit}}'
+      BUILD_VERSION: '0.0.0-nightly.g{{.Commit}}'
     helm:
       chart: .
       images:
@@ -181,7 +181,7 @@ components:
     artifactPath: charts/nktp-nightly.tgz
     writeDir: charts
     versionStamp:
-      BUILD_VERSION: '0.0.0-nightly+{{.Commit}}'
+      BUILD_VERSION: '0.0.0-nightly.g{{.Commit}}'
     buildCommand:
       - sh
       - -euc
