@@ -315,8 +315,18 @@ runtimeConfig:
 set -eu
 umask 077
 scratch=$(mktemp -d "$HELM_PLUGIN_DIR/render.XXXXXX")
-trap 'rm -rf "$scratch"' EXIT
-trap 'exit 1' HUP INT TERM
+cleanup() {
+  status=$?
+  trap - EXIT
+  # Context cancellation and the process owner can both send TERM. Do not
+  # let the second signal interrupt cleanup; the outer owner still bounds
+  # this process group with its KILL deadline.
+  trap '' HUP INT TERM
+  rm -rf "$scratch"
+  exit "$status"
+}
+trap cleanup EXIT
+trap 'trap "" HUP INT TERM; exit 1' HUP INT TERM
 cat > "$scratch/rendered.yaml"
 cp "$HELM_PLUGIN_DIR/kustomization.yaml" "$scratch/kustomization.yaml"
 "$NVKR_SITE_KUBECTL" kustomize "$scratch"
