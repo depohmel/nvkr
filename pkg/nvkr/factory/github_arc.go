@@ -58,6 +58,71 @@ func githubARCRunner(platform string) string {
 	}
 }
 
+// The hosted route is separate from operator-managed ARC. Unknown policies or
+// platforms have no runner; a label never grants capacity or KVM authority.
+func githubNativeDiskRunner(plan *Plan, platform string) string {
+	if plan == nil {
+		return ""
+	}
+	if plan.Environment.GitHubARC == "native-kvm-v1" && plan.Environment.GitHubHostedKVM == "" {
+		return githubARCRunner(platform)
+	}
+	if plan.Environment.GitHubHostedKVM == "native-amd64-v1" && plan.Environment.GitHubARC == "" && platform == "linux/amd64" {
+		return "ubuntu-24.04"
+	}
+	return ""
+}
+
+func githubNativeDiskPolicy(plan *Plan) bool {
+	return githubNativeDiskRunner(plan, "linux/amd64") != ""
+}
+
+func githubDiskAccessCheck(plan *Plan, stage githubStage) githubStep {
+	check := githubKVMAccessCheck()
+	if plan.Environment.GitHubHostedKVM == "native-amd64-v1" {
+		check.Name = "Admit hosted AMD64 provider, disk capacity and KVM access"
+		check.Run = fmt.Sprintf(`set -eu
+if [ "${RUNNER_ENVIRONMENT:-}" != github-hosted ] || [ "$(uname -s)/$(uname -m)" != Linux/x86_64 ]; then
+  printf 'NVKR-E-ENGINE-CAPABILITY: native-amd64-v1 requires an actual GitHub-hosted AMD64 runner\n' >&2
+  exit %d
+fi
+`, e.ExitCode(e.New(e.CodeEngineCapability, "hosted runner unavailable"))) + githubHostedDiskCapacityCheck(stage) + strings.ReplaceAll(check.Run, "operator-trusted ARC", "GitHub-hosted")
+	}
+	return check
+}
+
+// This early coarse check avoids known-insufficient hosted allocations downloading
+// large private inputs. It does not replace the execution owner's cgroup-aware
+// admission or authenticate any provider allocation.
+func githubHostedDiskCapacityCheck(stage githubStage) string {
+	var want execution.ResourceCapacity
+	for _, node := range stage.Nodes {
+		if node.ExecutionBinding != nil {
+			class := node.ExecutionBinding.Class.Resources
+			want.CPUMillis = max(want.CPUMillis, class.CPUMillis)
+			want.MemoryMiB = max(want.MemoryMiB, class.MemoryMiB)
+			want.EphemeralStorageMiB = max(want.EphemeralStorageMiB, class.EphemeralStorageMiB)
+		}
+	}
+	return fmt.Sprintf(`if ! cpu_count=$(nproc) ||
+   ! memory_mib=$(awk '$1 == "MemAvailable:" { print int($2 / 1024); found=1 } END { if (!found) exit 1 }' /proc/meminfo) ||
+   ! disk_report=$(df -Pm .) ||
+   ! storage_mib=$(printf '%%s\n' "$disk_report" | awk 'NR == 2 { print $4; found=1 } END { if (!found) exit 1 }'); then
+  printf 'NVKR-E-ENGINE-CAPABILITY: cannot observe hosted disk capacity\n' >&2
+  exit %[4]d
+fi
+case "$cpu_count:$memory_mib:$storage_mib" in
+  *[!0-9:]*|:*|*::*|*:) printf 'NVKR-E-ENGINE-CAPABILITY: invalid hosted disk capacity observation\n' >&2; exit %[4]d ;;
+esac
+cpu_millis=$((cpu_count * 1000))
+printf 'Hosted disk preflight: CPU %%s/%[1]d milliCPU, memory %%s/%[2]d MiB, scratch %%s/%[3]d MiB\n' "$cpu_millis" "$memory_mib" "$storage_mib"
+if ! [ "$cpu_millis" -ge %[1]d ] || ! [ "$memory_mib" -ge %[2]d ] || ! [ "$storage_mib" -ge %[3]d ]; then
+  printf 'NVKR-E-ENGINE-CAPABILITY: hosted disk class capacity unavailable before transfer\n' >&2
+  exit %[4]d
+fi
+`, want.CPUMillis, want.MemoryMiB, want.EphemeralStorageMiB, e.ExitCode(e.New(e.CodeEngineCapability, "hosted disk capacity unavailable")))
+}
+
 func githubBootstrapRunner(runner string) string {
 	switch runner {
 	case "arc-amd64-kvm":
@@ -82,13 +147,16 @@ func admitGitHubRequirements(plan *Plan, adapter string) error {
 			}
 		}
 	}
-	if plan.Environment.GitHubARC == "" {
+	if plan.Environment.GitHubARC == "" && plan.Environment.GitHubHostedKVM == "" {
 		return rejectUnsupportedPlanRequirements(plan, adapter)
 	}
 	deny := func() error {
+		if plan.Environment.GitHubHostedKVM != "" {
+			return e.New(e.CodeEngineCapability, "%s requires the separate native-amd64-v1 GitHub-hosted disk route", adapter)
+		}
 		return e.New(e.CodeEngineCapability, "%s requires the native-kvm-v1 ARC disk route", adapter)
 	}
-	if plan.Environment.GitHubARC != "native-kvm-v1" ||
+	if !githubNativeDiskPolicy(plan) ||
 		(plan.Qualification != TierPipelineAttested && !GitHubDiskBuildOnly(plan)) ||
 		plan.Environment.RunsOn != "" ||
 		plan.Environment.RuntimeBinary() != "docker" || plan.Environment.Runtime.RuntimeImage != "" ||
@@ -98,6 +166,9 @@ func admitGitHubRequirements(plan *Plan, adapter string) error {
 	}
 	disks := 0
 	for _, build := range plan.Builds {
+		if plan.Environment.GitHubHostedKVM != "" && build.Platform != "linux/amd64" {
+			return deny()
+		}
 		for _, component := range build.ResolvedComponents {
 			if component.BuildRequirements != nil && component.BuilderType != ir.BuilderVMImage {
 				return deny()
@@ -124,7 +195,7 @@ func admitGitHubRequirements(plan *Plan, adapter string) error {
 			binding := instruction.ExecutionBinding
 			platform := string(binding.Class.HostPlatform)
 			if platform != build.Platform || platform != instruction.ToolchainPlatform ||
-				binding.Class.RunsOn != githubARCRunner(platform) || githubARCRunner(platform) == "" ||
+				binding.Class.RunsOn != githubNativeDiskRunner(plan, platform) || githubNativeDiskRunner(plan, platform) == "" ||
 				len(instruction.Requirements.Capabilities) != 1 ||
 				instruction.Requirements.Capabilities[0] != (execution.CapabilityRequirement{Name: execution.CapabilityKVM, Policy: execution.CapabilityRequired}) {
 				return deny()
@@ -168,7 +239,7 @@ func admitGitHubRequirements(plan *Plan, adapter string) error {
 }
 
 func githubDiskOutput(plan *Plan, node Node) string {
-	if plan.Environment.GitHubARC != "native-kvm-v1" {
+	if !githubNativeDiskPolicy(plan) {
 		return ""
 	}
 	for _, output := range plan.LifecycleOutputs {

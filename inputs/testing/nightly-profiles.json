@@ -1,12 +1,27 @@
 [
   {
+    "name": "nvke-nightly-amd64",
+    "bundle": "nvke-nightly-amd64",
+    "build_workflow": "nvkr-run-nvke-nightly-amd64.yml",
+    "definition": "inputs/definitions/demo/amd64-nvidia-kvm.json",
+    "environment": "inputs/environments/github-nightly-nvidia-amd64.json",
+    "plan": ".github/nvkr-run-nvke-nightly-amd64/plan.json",
+    "network": "ovn",
+    "disk_output": "nvke-node-image-amd64",
+    "profiles_output": "controller-profiles",
+    "os_profile": "nvke-local-26-04-amd64-plain",
+    "kubernetes_version": "1.34.2",
+    "label_filter": "(nico-vms && ovn) || health",
+    "runtime_target": "native-amd64-vm",
+    "controller_output": "cwe"
+  },
+  {
     "name": "nvke-nightly-arm64",
     "bundle": "nvke-nightly-arm64",
     "build_workflow": "nvkr-run-nvke-nightly-arm64.yml",
     "definition": "inputs/definitions/demo/arm64-nvidia-kvm.json",
     "environment": "inputs/environments/github-nightly-nvidia.json",
     "plan": ".github/nvkr-run-nvke-nightly-arm64/plan.json",
-    "harness_commit": "b4f90e2c4fc4ed3d07efc18a22066a7e0b9b99c8",
     "network": "ovn",
     "disk_output": "nvke-node-image-arm64",
     "profiles_output": "controller-profiles",

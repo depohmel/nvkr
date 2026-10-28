@@ -20,6 +20,13 @@ output-scoped selections retain the same NVKE release producers.
 [`nico`](nico/registry.yaml) owns the source-packaged NICo and NICo prerequisite charts, pinned
 independently of NVKE to one infra-controller release. NICo images remain consumer-supplied.
 
+The [AMD64 NVIDIA nightly inputs](../definitions/demo/nightly-nvidia-amd64.md) add separate
+native catalog selections in `capnico/local-amd64`, `nvke/nightly-site-amd64`,
+`controller-profiles/nvidia-amd64`, `tools/installer-hosted-amd64` and `nicosim/amd64`.
+They preserve the ARM64 sources and select the existing native AMD64 toolchain pin for disk
+and simulator production. Their authored hosted execution requirements still need sufficient
+runner capacity and a complete published E2E Run.
+
 ## Current-to-shared mapping
 
 Former paths below were relative to `definitions/` at upstream commit

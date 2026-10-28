@@ -22,7 +22,7 @@ func admitDiskPublicationEncryption(plan *Plan, producer ir.Node) error {
 		return err
 	}
 	if producer.Disk.Encryption == "luks2" && (plan == nil || !diskBuildProvenance(plan) ||
-		plan.Qualification != TierPipelineAttested || plan.Environment.GitHubARC != "native-kvm-v1" || plan.Environment.Publication == nil) {
+		plan.Qualification != TierPipelineAttested || !githubNativeDiskPolicy(plan) || plan.Environment.Publication == nil) {
 		return e.New(e.CodeEngineCapability, "public-bootstrap LUKS2 publication requires native build-provenance evidence")
 	}
 	return nil

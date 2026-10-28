@@ -4,7 +4,12 @@
 # qualification: pipeline-attested (runtime receipts are not fabricated)
 name: nvkr-project-nvke-nightly-arm64
 'on':
-  workflow_dispatch: {}
+  workflow_dispatch:
+    inputs:
+      source_commit:
+        description: Exact source commit frozen by the coordinating main workflow
+        type: string
+        required: true
 permissions:
   contents: read
 concurrency:
@@ -3742,7 +3747,7 @@ jobs:
         run: |
           set -eu
           [ -n "${NVKR_PIN_SOURCE_TOKEN_0:-}" ] || { printf '%s\n' 'nvkr: [NVKR-E-FETCH-FAILED] source credential is empty' >&2; exit 20; }
-          ./nvkr-exec run finalize --definition inputs/definitions/demo/arm64-nvidia-kvm.json --environment inputs/environments/github-nightly-nvidia.json --plan .github/nvkr-run-nvke-nightly-arm64/plan.json --attempt "${{ github.run_id }}-${{ github.run_attempt }}" --workspace .nvkr/factory --out .nvkr/run.json --handoff .nvkr/qualification/handoff.json
+          ./nvkr-exec run finalize --definition inputs/definitions/demo/arm64-nvidia-kvm.json --environment inputs/environments/github-nightly-nvidia.json --plan .github/nvkr-run-nvke-nightly-arm64/plan.json --attempt "${{ github.run_id }}-${{ github.run_attempt }}" --workspace .nvkr/factory --out .nvkr/run.json
       - name: Upload final Run record
         id: upload-run-record
         uses: ./.github/nvkr-run-nvke-nightly-arm64/actions/ci-upload
@@ -3754,14 +3759,6 @@ jobs:
           retention-days: 7
           nvkr-ci-always: "true"
           nvkr-ci-storage-write-token: ${{ secrets.NVKR_CI_STORAGE_WRITE_TOKEN }}
-      - name: Upload complete qualification handoff
-        uses: ./.github/nvkr-run-nvke-nightly-arm64/actions/shared/upload-carrier
-        with:
-          with-path: ""
-          parameters: ${{ fromJSON(steps.nvkr-context.outputs.data)['transfer-2'] }}
-          nvkr-ci-storage-write-token: ${{ secrets.NVKR_CI_STORAGE_WRITE_TOKEN }}
-        if: ${{ success() }}
-        timeout-minutes: 5
       - name: Summarize Run result
         id: summarize-run-end
         if: ${{ always() }}

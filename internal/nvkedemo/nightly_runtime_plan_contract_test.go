@@ -43,7 +43,7 @@ func nightlyRuntimeCompiledFixture(t *testing.T, profile NightlyProfile, build N
 	base.Components = map[string]catalog.Component{}
 	for _, name := range []string{"nvkectl", "nvke-controller", "nvke-controller-chart", "nktp-chart"} {
 		component := producer
-		component.Commit, component.TreeHash = commit, commit
+		component.Tag, component.Commit, component.TreeHash = commit, commit, commit
 		base.Components[name] = component
 	}
 	stack, err := catalog.ApplyStack(base)
@@ -59,13 +59,14 @@ func nightlyRuntimeCompiledFixture(t *testing.T, profile NightlyProfile, build N
 		t.Fatal(err)
 	}
 	environment.GitHubBundle, environment.GitHubRuntimePlan = profile.Bundle, true
+	environment.GitHubRuntimeSource = &definition.GitHubRuntimeSource{Repository: "https://github.com/dsx-ai-factory/nvke", Ref: "refs/heads/main"}
 	environment.Publication.Mode, environment.Publication.RepositoryPrefix = "per-output-v1", "ghcr.io/example/nvkr/nightly/fixture"
 	environment.Signing.Identity = "^https://github\\.com/example/nvkr/\\.github/workflows/" + profile.BuildWorkflow + "@refs/heads/main$"
 	plan, err := factory.Compile(t.Context(), declared, environment, stack, "test")
 	if err != nil {
 		t.Fatal(err)
 	}
-	plan.DefinitionPath, plan.EnvironmentPath = profile.Definition, profile.Environment
+	plan.DefinitionPath, plan.EnvironmentPath, plan.RuntimeSourceCommit = profile.Definition, profile.Environment, commit
 	run, err := lifecycle.PrepareRun(declared, environment, plan, fmt.Sprintf("%d-%d", build.ProducerRun, build.ProducerAttempt))
 	if err != nil {
 		t.Fatal(err)
@@ -168,7 +169,7 @@ func TestNightlyRuntimePlanHandoffUsesFreshFrozenSourcePins(t *testing.T) {
 				run.PlanDigest = baselineDigest
 			}
 			archives := nightlyDownloadFixture(t, fresh, run, "success")
-			archives = append(archives, nightlyRuntimeZIPFixture(t, rawPlan, scenario))
+			archives[2] = nightlyRuntimeZIPFixture(t, rawPlan, scenario)
 			trustedDefinition, trustedEnvironment := fresh.Definition, fresh.Environment
 			if scenario == "current trusted Definition" {
 				trustedDefinition = selectedPlan.Definition
@@ -239,7 +240,7 @@ func TestNightlyRuntimePlanHandoffUsesFreshFrozenSourcePins(t *testing.T) {
 				code = e.CodeInvalidCatalog
 			case "substituted Environment", "substituted Definition":
 				code = e.CodeUnverifiedRef
-			case "wrong runtime origin", "replaced runtime artifact":
+			case "wrong runtime origin", "replaced runtime artifact", "stale Plan":
 				code = e.CodeUnpinnedInput
 			}
 			assertNightlyCode(t, err, code)
@@ -254,6 +255,14 @@ func TestNightlyPlanHarnessCommitRequiresUniqueExactNVKECohort(t *testing.T) {
 		change func(*factory.Plan)
 		code   e.Code
 	}{
+		{"missing frozen source", func(p *factory.Plan) { p.RuntimeSourceCommit = "" }, e.CodeUnpinnedInput},
+		{"mutable frozen source", func(p *factory.Plan) { p.RuntimeSourceCommit = "main" }, e.CodeUnpinnedInput},
+		{"wrong frozen source", func(p *factory.Plan) { p.RuntimeSourceCommit = strings.Repeat("e", 40) }, e.CodeUnpinnedInput},
+		{"missing policy", func(p *factory.Plan) { p.Environment.GitHubRuntimeSource = nil }, e.CodeUnpinnedInput},
+		{"foreign policy", func(p *factory.Plan) {
+			p.Environment.GitHubRuntimeSource.Repository = "https://github.com/foreign/nvke"
+		}, e.CodeUnpinnedInput},
+		{"mutable ref policy", func(p *factory.Plan) { p.Environment.GitHubRuntimeSource.Ref = "refs/heads/other" }, e.CodeUnpinnedInput},
 		{"complete", func(*factory.Plan) {}, ""},
 		{"missing role", func(p *factory.Plan) { p.Builds = p.Builds[1:] }, e.CodeProvenanceMissing},
 		{"duplicate role", func(p *factory.Plan) { p.Builds = append(p.Builds, p.Builds[0]) }, e.CodePipelineDrift},
@@ -261,6 +270,34 @@ func TestNightlyPlanHarnessCommitRequiresUniqueExactNVKECohort(t *testing.T) {
 		{"acquired component", func(p *factory.Plan) { p.Builds[0].ResolvedComponents[0].FromSource = false }, e.CodeUnpinnedInput},
 		{"foreign source", func(p *factory.Plan) { p.Builds[0].ResolvedComponents[0].Repo = "https://github.com/foreign/nvke" }, e.CodeUnpinnedInput},
 		{"mixed revisions", func(p *factory.Plan) { p.Builds[0].ResolvedComponents[0].Commit = strings.Repeat("e", 40) }, e.CodeUnpinnedInput},
+		{"stale disk source", func(p *factory.Plan) {
+			member := p.Builds[0]
+			member.Name = "disk"
+			member.ResolvedComponents = append(member.ResolvedComponents[:0:0], member.ResolvedComponents...)
+			member.ResolvedComponents[0].Commit = strings.Repeat("e", 40)
+			p.Builds = append(p.Builds, member)
+		}, e.CodeUnpinnedInput},
+		{"stale material source", func(p *factory.Plan) {
+			member := p.Builds[0]
+			member.Name = "material"
+			member.ResolvedComponents = append(member.ResolvedComponents[:0:0], member.ResolvedComponents...)
+			member.ResolvedComponents[0].Commit = strings.Repeat("e", 40)
+			p.Builds = append(p.Builds, member)
+		}, e.CodeUnpinnedInput},
+		{"stale simulator source", func(p *factory.Plan) {
+			member := p.Builds[0]
+			member.Name = "simulator"
+			member.ResolvedComponents = append(member.ResolvedComponents[:0:0], member.ResolvedComponents...)
+			member.ResolvedComponents[0].Commit = strings.Repeat("e", 40)
+			p.Builds = append(p.Builds, member)
+		}, e.CodeUnpinnedInput},
+		{"stale profiles source", func(p *factory.Plan) {
+			member := p.Builds[0]
+			member.Name = "profiles"
+			member.ResolvedComponents = append(member.ResolvedComponents[:0:0], member.ResolvedComponents...)
+			member.ResolvedComponents[0].Commit = strings.Repeat("e", 40)
+			p.Builds = append(p.Builds, member)
+		}, e.CodeUnpinnedInput},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			plan, _ := nightlyRuntimeCompiledFixture(t, profile, build, strings.Repeat("d", 40))

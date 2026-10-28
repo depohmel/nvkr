@@ -21,7 +21,7 @@ func admitInputs(definition authored.Definition, environment authored.Environmen
 		return err
 	}
 	for _, output := range definition.Outputs {
-		if output.Platform == "darwin/arm64" && (environment.Signing != nil || environment.Publication != nil || len(environment.GitHubRunners) != 0 || environment.GitHubARC != "" || environment.GitHubDevelopment) {
+		if output.Platform == "darwin/arm64" && (environment.Signing != nil || environment.Publication != nil || len(environment.GitHubRunners) != 0 || environment.GitHubARC != "" || environment.GitHubHostedKVM != "" || environment.GitHubDevelopment) {
 			return e.New(e.CodeEngineCapability, "native Mac executable acquisition currently requires a local environment without signing or publication")
 		}
 	}

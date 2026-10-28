@@ -14,26 +14,30 @@ import (
 	"testing"
 	"time"
 
-	"github.com/dsx-ai-factory/nvkr/pkg/nvkr/catalog"
 	"github.com/dsx-ai-factory/nvkr/pkg/nvkr/delivery"
 	e "github.com/dsx-ai-factory/nvkr/pkg/nvkr/errors"
 	"github.com/dsx-ai-factory/nvkr/pkg/nvkr/lifecycle"
 )
 
 func TestNightlyDiskAliasesShareHeldBytesAndRemainScoped(t *testing.T) {
-	for _, network := range []string{"ovn", "upstream-ovn"} {
-		t.Run(network, func(t *testing.T) {
+	for _, test := range []struct{ network, arch string }{{"ovn", "arm64"}, {"upstream-ovn", "arm64"}, {"ovn", "amd64"}, {"upstream-ovn", "amd64"}} {
+		t.Run(test.network+"/"+test.arch, func(t *testing.T) {
+			network := test.network
 			root := t.TempDir()
-			path := filepath.Join(root, DiskOutputName+".qcow2")
+			output, err := nightlyDiskOutput(network, test.arch)
+			if err != nil {
+				t.Fatal(err)
+			}
+			filename := output + ".qcow2"
+			if test.arch == "arm64" {
+				filename = DiskOutputName + ".qcow2"
+			}
+			path := filepath.Join(root, filename)
 			raw := []byte("exact authenticated candidate disk")
 			if err := privateWrite(path, raw); err != nil {
 				t.Fatal(err)
 			}
-			output, err := selectedDiskOutput(network)
-			if err != nil {
-				t.Fatal(err)
-			}
-			service, err := startNightlyDiskService(t.Context(), path, "127.0.0.1:0", NightlyProfile{Network: network, DiskOutput: output})
+			service, err := startNightlyDiskService(t.Context(), path, "127.0.0.1:0", NightlyProfile{RuntimeTarget: "native-" + test.arch + "-vm", Network: network, DiskOutput: output})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -51,14 +55,14 @@ func TestNightlyDiskAliasesShareHeldBytesAndRemainScoped(t *testing.T) {
 			if err := privateWrite(path, []byte("substituted disk")); err != nil {
 				t.Fatal(err)
 			}
-			base := strings.TrimSuffix(service.url, "/"+DiskOutputName+".qcow2")
+			base := strings.TrimSuffix(service.url, "/"+filename)
 			image := lifecycle.Artifact{Digest: "sha256:" + plainSHA(raw), Disk: &delivery.DiskOutput{Size: int64(len(raw))}}
 			if err := verifyHTTPDisk(t.Context(), service.url, image); err != nil {
 				t.Fatal(err)
 			}
 			client := &http.Client{Timeout: 5 * time.Second}
 			aliasStatus := http.StatusNotFound
-			if network == "upstream-ovn" {
+			if network == "upstream-ovn" && test.arch == "arm64" {
 				aliasStatus = http.StatusOK
 			}
 			for _, request := range []struct {
@@ -98,7 +102,7 @@ func TestNightlyDiskAliasesRejectUnselectedInputsBeforeWork(t *testing.T) {
 		{"upstream-ovn", "nvke-node-image-upstream-ovn-arm64", "foreign.qcow2"},
 	} {
 		t.Run(test.network+"/"+test.output+"/"+test.filename, func(t *testing.T) {
-			service, err := startNightlyDiskService(t.Context(), filepath.Join(t.TempDir(), test.filename), "invalid-listener", NightlyProfile{Network: test.network, DiskOutput: test.output})
+			service, err := startNightlyDiskService(t.Context(), filepath.Join(t.TempDir(), test.filename), "invalid-listener", NightlyProfile{RuntimeTarget: "native-arm64-vm", Network: test.network, DiskOutput: test.output})
 			assertNightlyCode(t, err, e.CodeEngineCapability)
 			if service != nil {
 				t.Fatal("unselected disk route started a service")
@@ -118,7 +122,7 @@ func TestNightlyBetaProfileResourcesBindAuthenticatedInputs(t *testing.T) {
 	for _, scenario := range []string{"ovn", "upstream-ovn", "duplicate disk", "wrong disk", "unknown profile", "wrong URL", "missing template", "existing output", "canceled"} {
 		t.Run(scenario, func(t *testing.T) {
 			root := t.TempDir()
-			profile := NightlyProfile{Network: "ovn", DiskOutput: DiskOutputName, OSProfile: TenantProfile}
+			profile := NightlyProfile{RuntimeTarget: "native-arm64-vm", Network: "ovn", DiskOutput: DiskOutputName, OSProfile: TenantProfile}
 			metadata, ipxe, userData := tenantReleaseFixtureBytes()
 			if scenario == "upstream-ovn" {
 				profile.Network, profile.DiskOutput = "upstream-ovn", "nvke-node-image-upstream-ovn-arm64"
@@ -174,8 +178,9 @@ func TestNightlyBetaProfileResourcesBindAuthenticatedInputs(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
+			alias := "nvke-nico-vms-24.04-arm64-fde"
 			for _, kind := range []string{"MachineImage", "ClusterRelease", "NodePoolRelease"} {
-				raw, err := os.ReadFile(filepath.Join(out, TenantProfile+"-"+strings.ToLower(kind)+".yaml"))
+				raw, err := os.ReadFile(filepath.Join(out, alias+"-"+strings.ToLower(kind)+".yaml"))
 				if err != nil {
 					t.Fatal(err)
 				}
@@ -183,7 +188,7 @@ func TestNightlyBetaProfileResourcesBindAuthenticatedInputs(t *testing.T) {
 				if err := json.Unmarshal(raw, &document); err != nil {
 					t.Fatal(err)
 				}
-				if document.APIVersion != "internal.nvke.nvidia.com/v1" || document.Kind != kind || document.Metadata.Name != TenantProfile || document.Metadata.Annotations["nvkr.dev/diagnostic-disk-digest"] != digest {
+				if document.APIVersion != "internal.nvke.nvidia.com/v1" || document.Kind != kind || document.Metadata.Name != alias || document.Metadata.Annotations["nvkr.dev/diagnostic-disk-digest"] != digest || document.Metadata.Annotations["nvkr.dev/diagnostic-source-profile"] != TenantProfile || document.Metadata.Annotations["nvkr.dev/diagnostic-test-alias"] != "stock-nvke-name-only;no-fde-coverage" {
 					t.Fatalf("resource lost current API or exact disk binding: %s", raw)
 				}
 				spec := document.Spec.(map[string]any)
@@ -191,8 +196,58 @@ func TestNightlyBetaProfileResourcesBindAuthenticatedInputs(t *testing.T) {
 					if spec["nico"].(map[string]any)["ipxeScript"] != string(ipxe) {
 						t.Fatal("resource changed authenticated boot bytes")
 					}
-				} else if spec["machineImageRef"].(map[string]any)["name"] != TenantProfile || spec["machineInit"].(map[string]any)["userDataTemplate"] != string(userData) || document.Metadata.Annotations["internal.nvke.nvidia.com/machine-init-kubernetes-version-injected"] != "true" {
+				} else if spec["machineImageRef"].(map[string]any)["name"] != alias || spec["machineInit"].(map[string]any)["userDataTemplate"] != string(userData) || document.Metadata.Annotations["internal.nvke.nvidia.com/machine-init-kubernetes-version-injected"] != "true" {
 					t.Fatal("release changed current version metadata, image binding or authenticated template")
+				}
+			}
+		})
+	}
+}
+
+func TestNightlyStockTestReleaseAliasesPreserveNativePlainInputs(t *testing.T) {
+	for _, arch := range []string{"amd64", "arm64"} {
+		t.Run(arch, func(t *testing.T) {
+			root := t.TempDir()
+			profile := NightlyProfile{RuntimeTarget: "native-" + arch + "-vm", Network: "ovn", DiskOutput: "nvke-node-image-" + arch, OSProfile: "nvke-local-26-04-" + arch + "-plain"}
+			metadata, ipxe, userData := tenantReleaseFixtureBytes()
+			for _, raw := range []*[]byte{&metadata, &ipxe, &userData} {
+				*raw = []byte(strings.ReplaceAll(string(*raw), "arm64", arch))
+			}
+			base := filepath.Join(root, "profiles/osProfiles")
+			if err := os.MkdirAll(filepath.Join(base, profile.OSProfile), 0700); err != nil {
+				t.Fatal(err)
+			}
+			for path, raw := range map[string][]byte{"metadata.yaml": metadata, profile.OSProfile + "/ipxeScript": ipxe, profile.OSProfile + "/userData.tmpl": userData} {
+				if err := privateWrite(filepath.Join(base, path), raw); err != nil {
+					t.Fatal(err)
+				}
+			}
+			digest := "sha256:" + strings.Repeat("1", 64)
+			image := lifecycle.Artifact{Name: profile.DiskOutput, Kind: "disk-image", OS: "linux", Arch: arch, Digest: digest, Disk: &delivery.DiskOutput{PayloadDigest: digest, Size: 123, Format: "qcow2", Encryption: "none"}}
+			destination := filepath.Join(root, "resources")
+			if err := nightlyProfileResources(t.Context(), profile, lifecycle.Release{Artifacts: []lifecycle.Artifact{image}}, root, destination); err != nil {
+				t.Fatal(err)
+			}
+			alias := "nvke-nico-vms-24.04-" + arch + "-fde"
+			for _, kind := range []string{"MachineImage", "ClusterRelease", "NodePoolRelease"} {
+				raw, err := os.ReadFile(filepath.Join(destination, alias+"-"+strings.ToLower(kind)+".yaml"))
+				if err != nil {
+					t.Fatal(err)
+				}
+				var document nightlyReleaseResource
+				if err := json.Unmarshal(raw, &document); err != nil {
+					t.Fatal(err)
+				}
+				if document.Metadata.Name != alias || document.Metadata.Annotations["nvkr.dev/diagnostic-disk-digest"] != digest || document.Metadata.Annotations["nvkr.dev/diagnostic-source-profile"] != profile.OSProfile || document.Metadata.Annotations["nvkr.dev/diagnostic-test-alias"] != "stock-nvke-name-only;no-fde-coverage" {
+					t.Fatal("test alias lost its diagnostic source binding", string(raw))
+				}
+				spec := document.Spec.(map[string]any)
+				if kind == "MachineImage" {
+					if spec["architecture"] != arch || spec["operatingSystem"].(map[string]any)["version"] != "26.04" || spec["variant"] != "local-plain-tpm" || spec["nico"].(map[string]any)["ipxeScript"] != string(ipxe) {
+						t.Fatal("test alias changed the actual OS, variant, architecture or boot bytes", string(raw))
+					}
+				} else if spec["machineImageRef"].(map[string]any)["name"] != alias || spec["machineInit"].(map[string]any)["userDataTemplate"] != string(userData) {
+					t.Fatal("test alias changed the authenticated template or native image reference", string(raw))
 				}
 			}
 		})
@@ -299,21 +354,16 @@ func TestNightlyBetaSiteSourceContract(t *testing.T) {
 	}
 	work := privateTestDir(t)
 	runner := Runner{Work: work, Env: []string{"PATH=" + os.Getenv("PATH"), "HOME=" + work, "KIND_CLUSTER_NAME=nvkr-nightly-contract", "NVKECTL_RENDER_ALLOW_TEMP_OUT=1"}}
+	commit := os.Getenv("NVKR_NVKE_SOURCE_COMMIT")
+	if !nightlyGitCommit(commit) {
+		t.Fatal("source contract requires the exact frozen NVKR_NVKE_SOURCE_COMMIT")
+	}
+	if err := nightlySource(t.Context(), runner, source, commit); err != nil {
+		t.Fatal(err)
+	}
 	if suite := os.Getenv("NVKR_NVKE_NIGHTLY_SOURCE_CONTRACT"); suite != "" {
-		profile, err := loadNightlyProfile(t.Context(), "../../inputs/testing/nightly-profiles.json", "nvke-nightly-arm64")
-		if err != nil {
-			t.Fatal(err)
-		}
 		source = suite
-		if err := nightlySource(t.Context(), runner, source, profile.HarnessCommit); err != nil {
-			t.Fatal(err)
-		}
-	} else {
-		selected, err := catalog.LoadContext(t.Context(), catalog.Dir(filepath.Join("..", "..", "inputs/catalogs/tools/native")))
-		if err != nil {
-			t.Fatal(err)
-		}
-		if err := nightlySource(t.Context(), runner, source, selected.Components["nvke-installer-sources"].Commit); err != nil {
+		if err := nightlySource(t.Context(), runner, source, commit); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -335,8 +385,12 @@ func TestNightlyBetaSiteSourceContract(t *testing.T) {
 	rendered := filepath.Join(work, "rendered")
 	command := []string{cli, "render", "deploy-path", "--deploy-path", filepath.Join(source, "deploy/nico"), "--sitespec", spec, "--stack-config", filepath.Join(work, "stack-config.json"), "--arch", "linux/arm64", "--out", rendered}
 	if os.Getenv("NVKR_NVKE_NIGHTLY_SOURCE_CONTRACT") != "" {
-		runner.Env = SetEnv(runner.Env, map[string]string{"NVKECTL_BIN": cli, "WORKSPACE_ROOT": source, "STATE_DIR": work, "NKE_E2E_CANDIDATE_RELEASE": "", "NKE_E2E_CANDIDATE_LAYOUT": ""})
-		command = []string{"bash", "-eu", "-c", `source "$1"; candidate_render_stack`, "contract", filepath.Join(source, "controller/hack/ci/nico-vms-candidate.sh")}
+		adapter := filepath.Join(work, "candidate-contract.sh")
+		if err := privateWrite(adapter, nightlyCandidateLibrary); err != nil {
+			t.Fatal(err)
+		}
+		runner.Env = SetEnv(runner.Env, map[string]string{"NVKECTL_BIN": cli, "WORKSPACE_ROOT": source, "STATE_DIR": work, "NKE_E2E_CANDIDATE_ARCH": "arm64", "NKE_E2E_CANDIDATE_RELEASE": "", "NKE_E2E_CANDIDATE_LAYOUT": ""})
+		command = []string{"bash", "-eu", "-c", `source "$1"; candidate_render_stack`, "contract", adapter}
 	}
 	if err := runner.Run(t.Context(), command, "nightly-render-contract", time.Minute); err != nil {
 		t.Fatal(err)

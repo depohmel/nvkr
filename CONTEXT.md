@@ -24,6 +24,9 @@ native disk and pipeline-attested stages with separate signer policy, credential
 registry namespaces. Cleanup admits only internal-visibility packages in those namespaces.
 Unsigned development remains static-unqualified. Neither setting grants production
 acceptance, provider access or qualified evidence.
+An explicit hosted runtime source policy freezes one selected repository commit
+for a Run without updating production catalog locks. The source identity affects
+its Builds; external dependencies and execution policy retain their reviewed inputs.
 _Avoid_: Delivery profile, component catalog, build identity
 
 **Run**:
@@ -370,7 +373,7 @@ _Avoid_: Execution admission, runtime proof, execution class, provider attestati
 An opaque, single-use, same-process capability binding the exact current Plan bytes and one selected VM build,
 its execution request and binding, cgroup-capped Linux host observations, and retained workspace/KVM handles.
 Capacity is re-observed inside the authored callback deadline immediately before work. It is current-availability
-authority reused by the local VM adapter and the explicitly operator-trusted native ARC disk route, not provider allocation, resource reservation, qualification evidence,
+authority reused by the local VM adapter and the explicitly admitted native ARC and hosted AMD64 disk routes, not provider allocation, resource reservation, qualification evidence,
 or proof that a subprocess consumed the held KVM descriptor.
 _Avoid_: Serialized receipt, hosted-runner attestation, resource reservation, KVM-consumption evidence
 

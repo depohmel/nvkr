@@ -9,9 +9,11 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"reflect"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -19,8 +21,6 @@ import (
 	"github.com/dsx-ai-factory/nvkr/internal/transportarchive"
 	"github.com/dsx-ai-factory/nvkr/pkg/nvkr/canonical"
 	"github.com/dsx-ai-factory/nvkr/pkg/nvkr/cistore"
-	"github.com/dsx-ai-factory/nvkr/pkg/nvkr/definition"
-	"github.com/dsx-ai-factory/nvkr/pkg/nvkr/delivery"
 	e "github.com/dsx-ai-factory/nvkr/pkg/nvkr/errors"
 	"github.com/dsx-ai-factory/nvkr/pkg/nvkr/factory"
 	"github.com/dsx-ai-factory/nvkr/pkg/nvkr/lifecycle"
@@ -28,8 +28,8 @@ import (
 )
 
 func nightlyIdentityFixture() (NightlyProfile, NightlyBuild) {
-	profile := NightlyProfile{Name: "nightly-fixture", Bundle: "nightly-fixture", Definition: "definitions/nightly-fixture/definition.json", Environment: "definitions/nightly-fixture/environment-github.json", Plan: ".github/nvkr-run-nightly-fixture/plan.json", BuildWorkflow: "nvkr-run-nightly-fixture.yml", HarnessCommit: strings.Repeat("a", 40), RuntimeTarget: "native-arm64-vm", Network: "ovn", DiskOutput: "disk", ProfilesOutput: "profiles", OSProfile: "os", KubernetesVersion: "v1.36.0", LabelFilter: "nightly"}
-	build := NightlyBuild{Profile: profile, CoordinatorRun: "100", CoordinatorAttempt: "2", ProducerRun: 200, ProducerAttempt: 1, SourceCommit: strings.Repeat("b", 40), ProducerURL: "https://github.com/example/nvkr/actions/runs/200", Trust: "github-run-facts; publication-not-yet-verified"}
+	profile := NightlyProfile{Name: "nightly-fixture", Bundle: "nightly-fixture", Definition: "definitions/nightly-fixture/definition.json", Environment: "definitions/nightly-fixture/environment-github.json", Plan: ".github/nvkr-run-nightly-fixture/plan.json", BuildWorkflow: "nvkr-run-nightly-fixture.yml", RuntimeTarget: "native-arm64-vm", Network: "ovn", DiskOutput: "disk", ProfilesOutput: "profiles", OSProfile: "os", KubernetesVersion: "v1.36.0", LabelFilter: "nightly"}
+	build := NightlyBuild{Profile: profile, CoordinatorRun: "100", CoordinatorAttempt: "2", ProducerRun: 200, ProducerAttempt: 1, SourceCommit: strings.Repeat("b", 40), NVKECommit: strings.Repeat("d", 40), ProducerURL: "https://github.com/example/nvkr/actions/runs/200", Trust: "github-run-facts; publication-not-yet-verified"}
 	return profile, build
 }
 
@@ -48,6 +48,9 @@ func TestNightlyCycleBindsCoordinatorSourceProfileAndProducer(t *testing.T) {
 		change func(*NightlyBuild)
 	}{
 		{"profile substitution", func(b *NightlyBuild) { b.Profile.HarnessCommit = strings.Repeat("c", 40) }},
+		{"missing NVKE revision", func(b *NightlyBuild) { b.NVKECommit = "" }},
+		{"mutable NVKE revision", func(b *NightlyBuild) { b.NVKECommit = "main" }},
+		{"uppercase NVKE revision", func(b *NightlyBuild) { b.NVKECommit = strings.Repeat("D", 40) }},
 		{"head substitution", func(b *NightlyBuild) { b.SourceCommit = strings.Repeat("c", 40) }},
 		{"producer retry", func(b *NightlyBuild) { b.ProducerAttempt = 2 }},
 		{"missing run", func(b *NightlyBuild) { b.ProducerRun = 0 }},
@@ -178,36 +181,7 @@ func TestNightlyInputReadersRejectAmbiguousUnsafeAndUnboundedRecords(t *testing.
 
 func nightlyCompiledFixture(t *testing.T, profile NightlyProfile, build NightlyBuild) (*factory.Plan, lifecycle.Run) {
 	t.Helper()
-	catalog, err := filepath.Abs("../../inputs/catalogs/nvke/module-tags")
-	if err != nil {
-		t.Fatal(err)
-	}
-	declared := definition.Definition{APIVersion: definition.DefinitionAPIVersion, Kind: definition.DefinitionKind, Metadata: definition.Metadata{Name: profile.Name}, Catalog: definition.Catalog{Base: catalog}, SBOMTool: "syft", CosignTool: "cosign", Outputs: []definition.DefinitionOutput{{Name: "nvkectl", Platform: "linux/arm64", Format: definition.OutputExecutable, Components: []string{"nvkectl"}}}}
-	environment, err := definition.LoadEnvironment(t.Context(), "../../docs/examples/nvke-tutorial/environment-github.yaml")
-	if err != nil {
-		t.Fatal(err)
-	}
-	environment.GitHubBundle = profile.Bundle
-	environment.Publication.Mode = "per-output-v1"
-	environment.Publication.RepositoryPrefix = "ghcr.io/example/nvkr/nightly/fixture"
-	environment.Signing.Identity = "^https://github\\.com/example/nvkr/\\.github/workflows/" + profile.BuildWorkflow + "@refs/heads/main$"
-	plan, err := factory.CompileDocuments(t.Context(), profile.Definition, declared, profile.Environment, environment, "test")
-	if err != nil {
-		t.Fatal(err)
-	}
-	run, err := lifecycle.PrepareRun(declared, environment, plan, "200-1")
-	if err != nil {
-		t.Fatal(err)
-	}
-	run.Status, run.Lane = lifecycle.RunComplete, lifecycle.LanePipeline
-	for _, output := range plan.LifecycleOutputs {
-		run.Observed = append(run.Observed, delivery.Output{Name: output.Name, Kind: output.Kind, BuildDigest: output.BuildDigest, Components: output.Components, Digest: pipeline.FileDigest([]byte("observed " + output.Name))})
-	}
-	run.ContentSubject, err = delivery.ContentDigest(run.Observed)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return plan, *run
+	return nightlyRuntimeCompiledFixture(t, profile, build, build.NVKECommit)
 }
 
 func nightlyAPIRun(profile NightlyProfile, build NightlyBuild) nightlyGitHubRun {
@@ -222,6 +196,9 @@ func nightlyAPIArtifact(name string, build NightlyBuild) nightlyGitHubArtifact {
 	artifact := nightlyGitHubArtifact{ID: 300, Name: name, Size: 100, Digest: pipeline.FileDigest([]byte(name)), Expired: &expired}
 	if name == "nvkr-publication-release" {
 		artifact.ID = 301
+	}
+	if name == "nvkr-runtime-inputs" {
+		artifact.ID = 302
 	}
 	artifact.WorkflowRun.ID, artifact.WorkflowRun.RepositoryID, artifact.WorkflowRun.HeadRepositoryID, artifact.WorkflowRun.HeadSHA, artifact.WorkflowRun.HeadBranch = build.ProducerRun, 123, 123, build.SourceCommit, "main"
 	return artifact
@@ -420,6 +397,13 @@ func nightlyDownloadFixture(t *testing.T, plan *factory.Plan, run lifecycle.Run,
 		t.Fatal(err)
 	}
 	archives[1] = nightlyZIPFixture(t, []zip.FileHeader{{Name: "publication-release.tar", Method: zip.Deflate}}, raw)
+	if plan.Environment.GitHubRuntimePlan {
+		raw, err := canonical.Marshal(plan)
+		if err != nil {
+			t.Fatal(err)
+		}
+		archives = append(archives, nightlyRuntimeZIPFixture(t, raw, ""))
+	}
 	return archives
 }
 
@@ -548,30 +532,20 @@ func TestNightlyExactDownloadsAndOwnerCarrierRestore(t *testing.T) {
 					}
 					return marshal(run)
 				}
+				index, parseErr := strconv.Atoi(phase[strings.LastIndex(phase, "-")+1:])
+				if parseErr != nil || index < 0 || index >= len(archives) {
+					t.Fatalf("invalid phase %s", phase)
+				}
 				if strings.HasPrefix(phase, "nightly-artifact-before-") || strings.HasPrefix(phase, "nightly-artifact-after-") {
-					name := "nvkr-lifecycle-run"
-					if strings.HasSuffix(phase, "1") {
-						name = "nvkr-publication-release"
-					}
+					name := []string{"nvkr-lifecycle-run", "nvkr-publication-release", "nvkr-runtime-inputs"}[index]
 					artifact := nightlyAPIArtifact(name, build)
-					index := 0
-					if strings.HasSuffix(phase, "1") {
-						index = 1
-					}
 					artifact.Size, artifact.Digest = int64(len(archives[index])), pipeline.FileDigest(archives[index])
 					if scenario == "artifact replacement" && strings.Contains(phase, "-after-") {
 						artifact.ID++
 					}
 					return marshal(nightlyArtifactList{TotalCount: 1, Artifacts: []nightlyGitHubArtifact{artifact}})
 				}
-				index := 0
-				if strings.HasSuffix(phase, "1") {
-					index = 1
-				}
-				endpoint := "repos/example/nvkr/actions/artifacts/300/zip"
-				if index == 1 {
-					endpoint = "repos/example/nvkr/actions/artifacts/301/zip"
-				}
+				endpoint := fmt.Sprintf("repos/example/nvkr/actions/artifacts/%d/zip", 300+index)
 				want := []string{"gh", "api", "--hostname", "github.com", "--allow-escape-sequences", "-H", "X-GitHub-Api-Version: 2026-03-10", endpoint}
 				if !reflect.DeepEqual(args, want) {
 					t.Fatalf("incorrect exact download command %q", args)
@@ -589,7 +563,7 @@ func TestNightlyExactDownloadsAndOwnerCarrierRestore(t *testing.T) {
 				if err != nil {
 					t.Fatal(err)
 				}
-				if inputs.Plan != plan || inputs.HarnessCommit != profile.HarnessCommit || inputs.ExpectedInvocation != "https://github.com/example/nvkr/actions/runs/200/attempts/1" || inputs.Run.PlanDigest != baseRun.PlanDigest || !strings.HasPrefix(inputs.Reference, plan.Environment.Publication.RepositoryPrefix+"/releases@") {
+				if inputs.Plan == plan || inputs.HarnessCommit != build.NVKECommit || inputs.ExpectedInvocation != "https://github.com/example/nvkr/actions/runs/200/attempts/1" || inputs.Run.PlanDigest != baseRun.PlanDigest || !strings.HasPrefix(inputs.Reference, plan.Environment.Publication.RepositoryPrefix+"/releases@") {
 					t.Fatal("handoff binding differs", inputs)
 				}
 				if _, err := os.Stat(filepath.Join(inputs.LocatorRoot, ".nvkr/factory/publications/release.txt")); err != nil {
@@ -621,7 +595,7 @@ func TestNightlyExactDownloadsAndOwnerCarrierRestore(t *testing.T) {
 func TestNightlyCancellationSourceBindingAndCapabilitiesPrecedeArtifactWork(t *testing.T) {
 	profile, build := nightlyIdentityFixture()
 	plan, _ := nightlyCompiledFixture(t, profile, build)
-	for _, scenario := range []string{"canceled", "wrong trusted source path", "unsupported runtime target", "unsupported network"} {
+	for _, scenario := range []string{"canceled", "wrong trusted source path", "unsupported runtime target", "unsupported network", "mismatched native Plan"} {
 		t.Run(scenario, func(t *testing.T) {
 			selected, locator := profile, build
 			ctx := t.Context()
@@ -643,6 +617,11 @@ func TestNightlyCancellationSourceBindingAndCapabilitiesPrecedeArtifactWork(t *t
 			}
 			if scenario == "unsupported network" {
 				selected.Network = "unsupported"
+				locator.Profile = selected
+				code = e.CodeEngineCapability
+			}
+			if scenario == "mismatched native Plan" {
+				selected.RuntimeTarget = "native-amd64-vm"
 				locator.Profile = selected
 				code = e.CodeEngineCapability
 			}

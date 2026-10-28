@@ -19,11 +19,11 @@ import (
 	"golang.org/x/sys/unix"
 )
 
-// GitHubDiskBuildOnly identifies the explicitly unqualified native ARC route.
+// GitHubDiskBuildOnly identifies the explicitly unqualified native disk routes.
 // Its Actions artifacts and Run are byte observations, never release authority.
 // Complete Plan and native execution admission remain required before work.
 func GitHubDiskBuildOnly(plan *Plan) bool {
-	return plan != nil && plan.Environment.GitHubARC == "native-kvm-v1" &&
+	return plan != nil && githubNativeDiskPolicy(plan) &&
 		plan.Qualification == TierStaticUnqualified && plan.Environment.Publication == nil &&
 		plan.Environment.Signing == nil && plan.Environment.DiskEvidence == "" && len(plan.Routes) == 0
 }
@@ -39,7 +39,7 @@ func completeGitHubDiskBuild(ctx context.Context, plan *Plan, expected Lifecycle
 		return e.New(e.CodeUsage, "hosted disk build completion requires context and live owner")
 	}
 	if !GitHubDiskBuildOnly(plan) {
-		return e.New(e.CodeEngineCapability, "hosted raw disk completion requires the build-only ARC route")
+		return e.New(e.CodeEngineCapability, "hosted raw disk completion requires an admitted build-only native route")
 	}
 	observation, result, err := owner.inspectDiskLifecycleMetadata(ctx, plan, expected)
 	if err != nil {

@@ -2959,6 +2959,51 @@ or verification's later registry-fetched disk snapshot. No hosted rerun has exer
 and it establishes neither a measured hosted storage envelope nor independent FDE consumption.
 
 ## Native ARC disk route
+
+The separate `githubHostedKVM: native-amd64-v1` generator policy prepares an AMD64 disk
+route on the exact generic `ubuntu-24.04` label with the existing main-only `nvkr-release` deployment
+Environment. It rejects mixed ARC/development selection, unrecognized runner aliases,
+foreign architectures and self-hosted or absent provider context before checkout or input
+transfer. A disk-stage resource preflight rejects insufficient host CPU, available memory
+and filesystem headroom before private carrier downloads; the owning helper retains its
+cgroup-aware capacity, held-workspace and KVM API admission before producer work. The
+class envelope is a configured admission limit, not a measured workload minimum or a claim that a
+standard runner supplies it. The existing ARC routes are unchanged. Contract coverage does not establish a full hosted
+nightly: deployment policy, private storage access and an externally completed build and E2E
+cycle remain outstanding. Resource-gate refusal without attempting either workload does not prove
+the standard runner is insufficient. Build and E2E resource consumption need separate measurements;
+if those establish a need for a larger runner, its provider mapping requires review. No arbitrary
+larger label or currently provisioned larger hosted runner is inferred.
+
+The AMD64 nightly selects this route for its complete 29-output producer and uses
+the same generic hosted label for authenticated candidate consumption. The ARM64
+route retains its ARC runner and fixed resource policy. AMD64 disk admission selects
+4 CPUs, 10 GiB memory and 64 GiB scratch through its exact overlay and matching
+Environment; these are authored limits, not empirically established minima. Its
+NVKR-owned setup adapter uses an explicit hosted AMD64 observation policy rather
+than the unsupported 24/90 GiB runtime floors. Both runtime architectures compile
+the existing local Go E2E tests at the same frozen NVKE main commit used by their
+producers. There is no separate NVKE PR or test-source revision dependency.
+Native KVM, publication authentication and owned cleanup remain required.
+
+[Source-built workload Run 40578231640](https://github.com/depohmel/nvkr/actions/runs/40578231640)
+completed QCOW2 assembly/validation and kind plus KVM Go E2E on `ubuntu-24.04`:
+11 specs passed, zero failed, one selected multi-CIDR spec skipped, with the remaining
+280 excluded by labels. Cluster deletion passed and best-effort host teardown ran.
+The complete job lasted 60 minutes 52 seconds and uploaded no Actions artifacts.
+Fifteen-second samples reached 1,506 MiB available RAM, 2,982/3,071 MiB used swap and
+373 MiB free disk. These observations show a successful experiment near capacity,
+not a measured minimum or independent cleanup proof. It used a same-job source-built
+disk and the nightly guest shape; it did not execute the authenticated candidate
+adapter or establish a completed NVKR publication-to-runtime nightly.
+
+The [2026-10-28 producer](https://github.com/dsx-ai-factory/nvkr/actions/runs/40626831828)
+still failed publication privacy admission. The existing internal
+`nvkr/nightly/nvke-nightly-arm64/releases-temporal` package was linked to the public
+source repository when inspected; the policy requires unlinked private/internal
+packages. The CI transfer package itself was internal and unlinked. No privacy gate
+is weakened or package ACL changed by the hosted AMD64 integration.
+
 The single checked-in `nvkr-run.yml` selects the 69-output M2 Definition and its main-only publication
 Environment, including plain and public-bootstrap FDE disks on both native architectures. The Makefile drift
 gate repeats the exact Definition and Environment paths recorded in the committed Plan. Dispatch does not
@@ -3340,10 +3385,10 @@ trusted pinned code with sudo and Docker access under the parent's UID, includin
 root-equivalent access to its read-only job token. Environment scrubbing is not
 an independent sandbox, and self-written verdicts are unsigned diagnostics.
 
-The maintained nightly profile selects native ARM64 KVM guests and NVIDIA-fork
+The maintained nightly profiles select native AMD64 and ARM64 KVM guests and NVIDIA-fork
 OVN. Scheduled and manual `all` selection exclude upstream OVN; its generated
 producer remains available for separate manual diagnostics. Selection validates
-these capabilities and exact suite revisions;
+these capabilities and the frozen same-source test revision;
 there is no caller-supplied security approval marker. ADR-13 keeps artifact vulnerability
 scanning and clearance outside v1; the existing repository vulnerability gate is unchanged.
 The chart sources replace the local-only image ID with the existing registry-addressable
@@ -3355,19 +3400,26 @@ The generated nightly source-fetch and native disk jobs prepare their selected p
 M2 toolchains through the existing read-only image-preparation owner. Temporary pull
 credentials are removed before source or producer execution; the nightly output
 namespace does not require republishing the existing pinned toolchains.
-The four CLI, controller and chart candidate sources now select stock NVKE
-`v0.22.0` at `400c24fb6465b042be883d6b62472528520d6291`.
+The nightly coordinator resolves NVKE `main` once, records `nvkeCommit` separately
+from the NVKR workflow commit and passes it to each generated producer. The
+opted-in producer authenticates that exact Git tree through the catalog owner,
+then freezes the source identity and version stamps for every source-built NVKE
+component, including complete disk-overlay replacements, OS materials, profiles
+and simulator. External dependency and acquisition pins retain the reviewed
+baseline. The runtime Plan records the same commit; finalization recompiles the
+selection, and the runtime consumer rejects mixed-source builds before launching
+the local Go suite from that commit. The committed v0.22.0 locks remain a baseline
+and are not nightly source selection or mutated by the coordinator.
 The nightly consumer projects authenticated profile bytes into the current resource
 API and supplies separate site and stack configuration, credentials through the child
 environment, and telemetry through the installer values handoff. Both the normal and upstream-OVN
 disk URLs, where required by the selected profile, read the same held disk and are
 checked against the exact selected Artifact. Focused contract and HTTP race tests
-passed for the preceding beta selection, and that CLI validated and rendered the diagnostic site spec. Those checks do not validate the current v0.22.0 source.
-The user-approved test-only suite pin is `b4f90e2c4fc4ed3d07efc18a22066a7e0b9b99c8`,
-a signed compatibility revision of the earlier `a3206710` suite, with beta.6 deployment
-templates and an explicit stack-config/credential/telemetry handoff. The maintained
-nightly profile retains this harness pin and its candidate entrypoint, which
-is absent from the selected v0.22.0 product source. The [hosted source-contract Run](https://github.com/dsx-ai-factory/nvkr/actions/runs/39487106857/attempts/1)
+passed for the preceding beta selection, and that CLI validated and rendered the diagnostic site spec. Those earlier checks do not validate the latest-main runtime.
+An earlier test-only suite pin, `b4f90e2c4fc4ed3d07efc18a22066a7e0b9b99c8`,
+used beta.6 deployment templates and an explicit stack-config/credential/telemetry
+handoff. It is no longer the maintained nightly test selection. Its
+[hosted source-contract Run](https://github.com/dsx-ai-factory/nvkr/actions/runs/39487106857/attempts/1)
 on NVKR `8df540b83aeaec5e27b865dcd65887882699755b` passed the actual
 candidate render function with the beta.6 CLI and the hook argv/environment
 regression. This source-contract-only dispatch skipped the ordinary selection,
@@ -3376,10 +3428,22 @@ is covered separately by the shell-versus-Go parity test in the successful
 [Merge Gate on `caf85b27`](https://github.com/dsx-ai-factory/nvkr/actions/runs/39487820535).
 This verifies configuration composition, not published-artifact or VM
 runtime acceptance; full runtime validation of the current selection remains unverified.
-Product sources, including SPIRE packaging, select v0.22.0; the test harness retains
-its independent pinned revision. This diagnostic selection is an exception to
-ADR-23's proposed matching-revision rule, not adoption of that proposal. Missing
-candidate hooks still fail admission; the generic rebuilding suite is no fallback.
+The current NVKR adapter requires the selected checkout's stock Go E2E tests,
+backend helpers and deployment inputs. It does not require the earlier candidate
+shell hook, modify NVKE source, rebuild product components during testing or
+download an OS tag as a fallback. Stock release-name aliases are annotated as
+diagnostic bindings to the authenticated plain disk; their historical `fde` name
+does not establish FDE coverage. Source fixture metadata registers test cases and
+is never installed as candidate content. A completed publication-to-runtime run
+of this latest-main path remains required; the earlier configuration-only result
+does not exercise it.
+Local checks against NVKE `ad7450e74425e3643caa6dce1edb3203935c29e3`
+compiled its CLI and unchanged Go E2E suite, selected 12 OVN/health specs in a dry
+run, and passed the actual site-spec/render handoff, stock chart authentication
+configuration and authenticated-seed projection contract. Both complete
+29-output NVIDIA Plans froze every selected NVKE source component at that commit
+and passed exact runtime-source generation rechecks in scratch roots. Those Plan
+checks built and published no products; the suite dry run provisioned no guests.
 These source and adapter checks do not establish overall interface adoption or runtime acceptance.
 ADR-23 remains proposed and does not authorize this adapter's schedule, runner or
 credential policy; broader acceptance remains open.

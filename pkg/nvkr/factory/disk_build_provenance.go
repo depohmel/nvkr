@@ -70,7 +70,7 @@ func validateDiskBuildDocument(plan *Plan, output, component, subject string, do
 // packageDiskBuildProvenance authenticates the original held QCOW2 and every
 // transitive material handoff. It does not manufacture an inspection receipt.
 func (owner *LocalRunResult) packageDiskBuildProvenance(ctx context.Context, plan *Plan, expected LifecycleOutputPlan, output Artifact) (returnErr error) {
-	if !diskBuildProvenance(plan) || plan.Qualification != TierPipelineAttested || plan.Environment.GitHubARC != "native-kvm-v1" {
+	if !diskBuildProvenance(plan) || plan.Qualification != TierPipelineAttested || !githubNativeDiskPolicy(plan) {
 		return e.New(e.CodeEngineCapability, "disk build provenance requires its explicit hosted policy")
 	}
 	platform, _, err := reconciledDiskPackageBinding(plan, expected, output)

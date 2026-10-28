@@ -1,18 +1,21 @@
 # Nightly NVKR builds and NVKE end-to-end tests
 
-The requested flow is a scheduled GitHub Actions pipeline: build and publish a
-complete candidate with NVKR, authenticate that exact publication, then deploy
-and test it with NVKE. The first runtime target uses kind as management and real
-KVM guests as tenant nodes on a dedicated Linux runner. Local describes the test
+The requested flow is a scheduled GitHub Actions pipeline: resolve the latest
+NVKE `main` once, freeze that exact commit, build and publish a complete candidate
+with NVKR, authenticate that publication, then run the same commit's local Go E2E
+tests against the built artifacts. The first runtime target uses kind as management and real
+KVM guests as tenant nodes on native Linux. AMD64 uses the standard GitHub-hosted
+`ubuntu-24.04` runner; ARM64 retains `arc-arm64-kvm`. Local describes the test
 environment; GitHub Actions schedules and executes the entire cycle.
 
 The coordinator is `.github/workflows/nvkr-nightly.yml`, with a daily 03:17 UTC
 schedule and manual dispatch. `inputs/testing/nightly-profiles.json` selects the
-project Definitions, named generated producer workflows, exact suite revisions
-and runtime profiles. Each project selects its own complete output set. The
+project Definitions, named generated producer workflows and runtime profiles.
+The coordinator passes one exact NVKE commit to both architectures; a separate
+test-source revision cannot override it. Each project selects its complete output set. The
 ordinary generated M2 workflow retains its default paths; named bundles use the
 existing generator and manifest owner. The coordinator is authored separately.
-The daily trigger selects NVIDIA-fork OVN only, including manual `all` dispatches.
+The daily trigger selects NVIDIA-fork OVN for AMD64 and ARM64, including manual `all` dispatches.
 The upstream OVN producer remains available for separate manual diagnostics outside
 this coordinator. The daily trigger is retained as explicitly requested by the user.
 
@@ -36,13 +39,22 @@ successful hosted transfer or public-repository readiness. Provider locator rete
 private carrier blobs; registry retention is separate. The public runtime attachment contains the constructed
 `cycle.json` summary only; raw suite reports are not attached.
 
-The NVIDIA nightly Environment opts into runtime Plan preparation. The producer's first bootstrap reads the
-current catalog pins from that dispatch's exact repository commit and freezes fresh Plan data. Other
-helper bootstraps restore the same data and verify it against those inputs; every producer job and the
-finalizer then receives it with its native helper. Source-version updates within the reviewed execution
-contract need no regeneration commit. Changes to workflow/action bytes, member paths or Environment
-policy still fail admission and require reviewed regeneration. This retains pinned inputs throughout
-the cycle and does not follow newer versions after the build starts.
+The NVIDIA nightly Environments opt into runtime Plan preparation and explicitly
+select the NVKE repository's `refs/heads/main`. The coordinator resolves it once;
+`nvkeCommit` records that source selection separately from `sourceCommit`, which
+identifies NVKR's own workflow checkout. The first producer bootstrap authenticates
+the exact NVKE Git tree and applies its commit, tree and timestamp to every
+source-built NVKE component, including complete disk-overlay replacements,
+simulator, profiles and OS materials. External dependencies and reviewed build
+commands retain their catalog selections. This is latest NVKE source, not a claim
+that every third-party dependency is refreshed from main.
+
+The resulting Plan and invocation data are frozen and transported to the remaining
+jobs. Finalization reconstructs the same source selection through the owning
+compiler; it does not accept a self-reported Plan as proof. Source advances within
+the reviewed execution contract need no regeneration commit. Changes to workflow
+or action bytes, member paths or Environment policy require regeneration. Neither
+build nor tests resolve `main` again after the cycle starts.
 
 This is downstream repository CI test infrastructure outside NVKR's public
 product lifecycle and v1 acceptance. It leaves M3 build/evidence qualification
@@ -53,33 +65,39 @@ a successful combined cycle and its runtime cleanup verdict remain unrecorded.
 
 ## Runtime and tool bindings
 
-The manual `hosted_preflight_only` mode probes `ubuntu-24.04-arm`, the same
-GitHub-hosted label used by the generated ARM64 builds. It can run from a fork
+The manual `hosted_preflight_only` mode probes `ubuntu-24.04`, the same
+GitHub-hosted label used by the AMD64 producer and runtime. It can run from a fork
 without secrets, source checkout, product builds or artifact uploads. It requires
-24 GiB available memory, 90 GiB free disk and accessible KVM before attempting
-to initialize a paused QEMU machine with KVM acceleration. It fails if these
-requirements are missing; it does not substitute software emulation. Select
+an actual hosted AMD64 allocation and accessible KVM before attempting
+to initialize a paused QEMU machine with KVM acceleration. It records current
+memory and disk capacity without treating them as measured workload minima;
+it does not substitute software emulation. Select
 this mode independently of `source_contract_only`.
 
-This diagnostic has no recorded hosted result. Even a passing probe establishes
-only host capacity and KVM initialization, not the suite's networking, toolchain
-or full deployment and cleanup. The full runtime job retains `arc-arm64-kvm`
-until a hosted runtime route has been exercised.
+The [AMD64 KVM probe](https://github.com/depohmel/nvkr/actions/runs/40555397725/job/122369991078)
+initialized real KVM, although the former 24/90 GiB checks rejected that allocation.
+The later [source-built workload experiment](https://github.com/depohmel/nvkr/actions/runs/40578231640)
+completed the QCOW2 build/check and kind plus KVM VM Go suite: 11 specs passed,
+zero failed, one selected multi-CIDR spec skipped, in about 61 minutes overall.
+It used the nightly guest shape and uploaded no Actions artifacts. Sampled disk
+headroom fell to 373 MiB and swap was nearly full. This establishes one successful
+source workload, not the full authenticated candidate path or a measured minimum.
+The AMD64 candidate uses an explicit hosted observation policy; the ARM64 fixed
+resource policy remains unchanged. Neither a probe nor a label proves full-nightly acceptance.
 
-The maintained nightly profile selects the NVIDIA-fork OVN ARM64 candidate
+The maintained nightly profiles select NVIDIA-fork OVN AMD64 and ARM64 candidates
 for kind management plus real KVM tenant VMs. Selection validates the maintained
 profile, exact suite revision, native runtime target and network. There is no
 self-declared security approval field. Artifact authentication, source matching,
 native-host preflight and owned-resource cleanup remain required.
 
-The nightly Definition selects the profile-owned site catalog at NVKE `v0.22.0`,
-commit `400c24fb6465b042be883d6b62472528520d6291`, for the CLI, controller image,
-controller chart and NKTP chart. The test-only suite checkout selects
-`b4f90e2c4fc4ed3d07efc18a22066a7e0b9b99c8`.
-The SPIRE OS package uses the same v0.22.0 source and Debian revision 4. Clusterctl selects 1.13.6 to match the
-selected installer. The separate test pin is a user-approved exception to ADR-23's proposed
-matching-revision rule; it establishes no runtime compatibility or broader acceptance.
-ADR-23 remains proposed and excludes CI trigger, runner and credential policy.
+The committed catalogs remain the reviewed build-command and dependency baseline.
+They do not choose the nightly NVKE revision: the dispatch's frozen main commit
+does. The runtime consumer requires every source-built NVKE component to match
+`nvkeCommit` and checks out the Go suite at that same SHA. No separate NVKE PR or
+candidate-only source branch is required. Clusterctl and other external tools
+retain their catalog pins; compatibility with a future main commit is tested,
+not assumed.
 
 The adapter validates authenticated profile bytes and the exact selected disk through the
 same profile projection as the local tenant flow, then emits `MachineImage`, `ClusterRelease`
@@ -89,18 +107,21 @@ name in its fresh management cluster. No source profile-converter executable is 
 The site specification uses the current `cluster` and `controllerStack` shape with private
 credentials. These adapter paths have contract tests; they have no recorded runtime cycle.
 
-The selected test source retains `controller/hack/ci/nico-vms-candidate.sh`, which the selected product source
-omits. This entrypoint accepts the authenticated candidate artifacts and reports cleanup.
-The generic suite's product rebuild and OS-tag download remain forbidden fallbacks.
-The beta CLI validates and renders the selected test source's deployment templates in a
-local contract check; a combined runtime cycle remains unverified.
+NVKR owns the setup and launch adapter. It sources existing NVKE test helpers,
+deploys the authenticated artifacts, and compiles `controller/test/e2e` from the
+unchanged selected checkout. It does not require NVKE's candidate-only shell
+entrypoint or invoke a Tilt rebuild or an OS-tag download as a fallback. The stock
+VM tests use a fixed release identifier containing `24.04` and `fde`; the adapter
+binds that diagnostic alias to the actual authenticated 26.04 plain profile.
+The alias does not establish 24.04 or FDE coverage. Source fixture metadata is used
+only to register the existing test matrix; it is not installed as candidate content.
 
 The chart producers use the existing registry-addressable Go image and acquire
 Helm 4.1.4 by its existing operator-catalog archive and executable digests.
 Vendoring captures that executable and the pinned chart dependencies in the
 source closure; packaging uses the captured executable offline. Installer Helm
 4.2.4 and operator Helm 4.1.4 retain their separate acquired-executable bindings.
-The independent runtime verifier is checksum-pinned Cosign 3.1.3 for Linux ARM64.
+The independent runtime verifier is checksum-pinned Cosign 3.1.3 for the selected Linux architecture.
 Generated source-fetch and disk jobs use the existing read-only preparation step
 for the selected private M2 toolchains. Its temporary registry credentials are
 removed before source or producer execution.
@@ -167,11 +188,11 @@ establish a completed hosted producer or E2E cycle.
 
 ## One cycle
 
-The following is the required candidate cycle. The separately pinned test harness supplies
-the candidate hook. A successful combined producer and runtime cycle remains unverified;
+The following is the required candidate cycle. NVKR owns the artifact handoff and
+test launch. A successful combined producer and runtime cycle remains unverified;
 the earlier producer failures and reported runner repair above do not establish that result.
 
-1. Select a maintained profile on the default branch.
+1. Select maintained profiles on the default branch and resolve NVKE `main` once.
 2. Dispatch its maintained generated producer once. Retain the exact run ID
    returned by dispatch; never use a latest-run search or retry an ambiguous
    POST. Join that run while checking repository, commit, workflow and attempt.
@@ -182,13 +203,13 @@ the earlier producer failures and reported runner repair above do not establish 
    provenance, outputs and exact Definition, Environment and Plan. Export held
    bytes only for the originating invocation. Extract native tools, images,
    charts and disk through existing lifecycle and delivery owners.
-5. Use a private checkout at the exact pinned NVKE suite revision. Require its candidate
-   adapter before executing runtime work. Project authenticated profiles into current release
+5. Use a private checkout at the exact NVKE commit in the frozen Plan. Require the
+   existing Go tests and test helpers before runtime work. Project authenticated profiles into current release
    resources bound to the selected disk. Produce the suite's
    `release-description/v1` input through NVKR's existing export renderer over
    the held publication; the description adds no verification authority.
-   Execute the source-owned
-   `nico-vms-e2e.sh` candidate path, without rebuilding product components or
+   Compile and run the source-owned Go E2E suite through NVKR's setup adapter,
+   without rebuilding product components or
    selecting newer tags. Initial coverage is `(nico-vms && ovn) || health`:
    controller health/readiness/version and two-node OVN tenant tests. This does
    not claim every existing suite or lifecycle operation runs.

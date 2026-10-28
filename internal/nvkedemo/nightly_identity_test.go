@@ -43,7 +43,7 @@ type NightlyProfile struct {
 	Environment       string `json:"environment"`
 	Plan              string `json:"plan"`
 	BuildWorkflow     string `json:"build_workflow"`
-	HarnessCommit     string `json:"harness_commit"`
+	HarnessCommit     string `json:"harness_commit,omitempty"`
 	RuntimeTarget     string `json:"runtime_target"`
 	Network           string `json:"network"`
 	DiskOutput        string `json:"disk_output"`
@@ -61,6 +61,7 @@ type NightlyBuild struct {
 	ProducerRun        int64          `json:"producerRun"`
 	ProducerAttempt    int64          `json:"producerAttempt"`
 	SourceCommit       string         `json:"sourceCommit"`
+	NVKECommit         string         `json:"nvkeCommit"`
 	ProducerURL        string         `json:"producerURL"`
 	Trust              string         `json:"trust"`
 }
@@ -160,16 +161,37 @@ func validateNightlyProfile(profile NightlyProfile) error {
 			return e.New(e.CodeVerifyFailed, "profile input path is not repository-relative")
 		}
 	}
-	if !nightlyGitCommit(profile.HarnessCommit) || profile.RuntimeTarget == "" || profile.Network == "" || profile.DiskOutput == "" || profile.ProfilesOutput == "" || profile.OSProfile == "" || profile.KubernetesVersion == "" || profile.LabelFilter == "" {
+	if profile.HarnessCommit != "" {
+		return e.New(e.CodeUnpinnedInput, "nightly suite revision must come from the cycle-frozen NVKE main source, not an authored harness override")
+	}
+	if profile.RuntimeTarget == "" || profile.Network == "" || profile.DiskOutput == "" || profile.ProfilesOutput == "" || profile.OSProfile == "" || profile.KubernetesVersion == "" || profile.LabelFilter == "" {
 		return e.New(e.CodeVerifyFailed, "profile omits exact harness or runtime intent")
 	}
-	if profile.RuntimeTarget != "native-arm64-vm" || (profile.Network != "ovn" && profile.Network != "upstream-ovn") {
-		return e.New(e.CodeEngineCapability, "nightly adapter requires native ARM64 VMs and an explicit supported OVN network")
+	arch, err := nightlyArchitecture(profile.RuntimeTarget)
+	if err != nil {
+		return err
+	}
+	if arch == "amd64" && profile.Network == "upstream-ovn" {
+		return e.New(e.CodeEngineCapability, "AMD64 upstream OVN requires a compatible candidate disk endpoint contract")
+	}
+	if profile.Network != "ovn" && profile.Network != "upstream-ovn" {
+		return e.New(e.CodeEngineCapability, "nightly adapter requires an explicit supported OVN network")
 	}
 	if profile.ControllerOutput != "" && !nightlyOutputNamePattern.MatchString(profile.ControllerOutput) {
 		return e.New(e.CodeVerifyFailed, "nightly controller output requires a canonical logical name")
 	}
 	return nil
+}
+
+func nightlyArchitecture(target string) (string, error) {
+	switch target {
+	case "native-arm64-vm":
+		return "arm64", nil
+	case "native-amd64-vm":
+		return "amd64", nil
+	default:
+		return "", e.New(e.CodeEngineCapability, "nightly adapter requires an explicit native ARM64 or AMD64 VM target")
+	}
 }
 
 func nightlyGitCommit(value string) bool {
@@ -197,6 +219,9 @@ func validateNightlyCycle(profile NightlyProfile, build NightlyBuild, repository
 		if _, err := nightlyPositiveID(value); err != nil {
 			return err
 		}
+	}
+	if !nightlyGitCommit(build.NVKECommit) {
+		return e.New(e.CodeUnpinnedInput, "nightly locator requires the exact cycle-resolved NVKE main revision")
 	}
 	if !nightlyGitCommit(sha) || build.SourceCommit != sha || build.CoordinatorRun != parentID || build.CoordinatorAttempt != parentAttempt || build.Profile != profile || build.ProducerRun <= 0 || build.ProducerRun > nightlyMaxJSONInteger || build.ProducerAttempt != 1 || build.ProducerRun == mustNightlyID(parentID) || build.Trust != "github-run-facts; publication-not-yet-verified" || build.ProducerURL != fmt.Sprintf("https://github.com/%s/actions/runs/%d", repository, build.ProducerRun) {
 		return e.New(e.CodeUnpinnedInput, "nightly locator differs from exact coordinator, source or producer")
@@ -374,6 +399,9 @@ func newNightlyInputsWithCapture(ctx context.Context, profile NightlyProfile, bu
 	if plan == nil || capture == nil {
 		return nil, e.New(e.CodeUsage, "nightly handoff requires exact compiled Plan and command owner")
 	}
+	if err := nightlyPlanArchitecture(plan, profile); err != nil {
+		return nil, err
+	}
 	digest, err := plan.Digest()
 	if err != nil {
 		return nil, err
@@ -381,10 +409,8 @@ func newNightlyInputsWithCapture(ctx context.Context, profile NightlyProfile, bu
 	if plan.Environment.GitHubBundle != profile.Bundle || plan.DefinitionPath != profile.Definition || plan.EnvironmentPath != profile.Environment || plan.Qualification.String() != lifecycle.LanePipeline {
 		return nil, e.New(e.CodePipelineDrift, "nightly Plan selection differs from maintained profile")
 	}
-	if !environment.GitHubRuntimePlan {
-		if _, err := lifecycle.PrepareExactInputs(definition, environment, plan); err != nil {
-			return nil, err
-		}
+	if !environment.GitHubRuntimePlan || environment.GitHubRuntimeSource == nil || environment.GitHubRuntimeSource.Repository != "https://github.com/dsx-ai-factory/nvke" || environment.GitHubRuntimeSource.Ref != "refs/heads/main" {
+		return nil, e.New(e.CodeEngineCapability, "nightly handoff requires the cycle-frozen runtime source policy")
 	}
 	directory, info, err := securepath.OpenDirectory(workspace)
 	if err != nil {
@@ -472,7 +498,7 @@ func newNightlyInputsWithCapture(ctx context.Context, profile NightlyProfile, bu
 		}
 		members[i] = restored[memberNames[i]]
 	}
-	harnessCommit := profile.HarnessCommit
+	harnessCommit := ""
 	if environment.GitHubRuntimePlan {
 		privateRequest.Name = names[2]
 		var restored map[string][]byte
@@ -484,6 +510,9 @@ func newNightlyInputsWithCapture(ctx context.Context, profile NightlyProfile, bu
 		if err != nil {
 			return nil, err
 		}
+		if err = nightlyPlanArchitecture(plan, profile); err != nil {
+			return nil, err
+		}
 		digest, err = plan.Digest()
 		if err != nil {
 			return nil, err
@@ -492,6 +521,9 @@ func newNightlyInputsWithCapture(ctx context.Context, profile NightlyProfile, bu
 		if err != nil {
 			return nil, err
 		}
+	}
+	if harnessCommit != build.NVKECommit {
+		return nil, e.New(e.CodeUnpinnedInput, "frozen nightly NVKE source differs from the coordinator cycle")
 	}
 	var publication factory.Artifact
 	for _, artifact := range plan.Graph.Artifacts {
@@ -549,6 +581,22 @@ func newNightlyInputsWithCapture(ctx context.Context, profile NightlyProfile, bu
 		return nil, e.New(e.CodeUnpinnedInput, "aggregate reference differs from Plan publication namespace")
 	}
 	return &NightlyInputs{Reference: reference, Plan: plan, HarnessCommit: harnessCommit, LocatorRoot: locatorRoot, RunPath: filepath.Join(downloads[0], "run.json"), Run: run, ExpectedInvocation: fmt.Sprintf("https://github.com/%s/actions/runs/%d/attempts/%d", repository, build.ProducerRun, build.ProducerAttempt)}, nil
+}
+
+func nightlyPlanArchitecture(plan *factory.Plan, profile NightlyProfile) error {
+	arch, err := nightlyArchitecture(profile.RuntimeTarget)
+	if err != nil {
+		return err
+	}
+	if plan == nil || len(plan.Builds) == 0 {
+		return e.New(e.CodeVerifyFailed, "nightly runtime requires a nonempty native producer Plan")
+	}
+	for _, build := range plan.Builds {
+		if build.Platform != "linux/"+arch {
+			return e.New(e.CodeEngineCapability, "nightly output %q platform %q differs from native runtime %q", build.Name, build.Platform, arch)
+		}
+	}
+	return nil
 }
 
 func nightlyRuntimePlanMembers(ctx context.Context, members map[string][]byte, profile NightlyProfile, definition lifecycle.Definition, environment lifecycle.Environment) (*factory.Plan, error) {
@@ -647,19 +695,27 @@ func nightlyTransportMembers(ctx context.Context, archive []byte, artifact night
 	return members, nil
 }
 
-// The current-source suite follows the one exact NVKE revision that produced all
-// four public NVKE roles. Mixed product revisions cannot choose a suite by order.
+// The suite and every source-built NVKE member use the cycle-frozen revision.
+// Required site roles remain unique even when disk materials add source members.
 func nightlyPlanHarnessCommit(plan *factory.Plan, profile NightlyProfile) (string, error) {
 	if plan == nil {
-		return "", e.New(e.CodeUsage, "nightly harness selection requires a Plan")
+		return "", e.New(e.CodeUsage, "nightly suite selection requires a Plan")
+	}
+	policy := plan.Environment.GitHubRuntimeSource
+	if profile.HarnessCommit != "" || !plan.Environment.GitHubRuntimePlan || policy == nil || policy.Repository != "https://github.com/dsx-ai-factory/nvke" || policy.Ref != "refs/heads/main" || !nightlyGitCommit(plan.RuntimeSourceCommit) {
+		return "", e.New(e.CodeUnpinnedInput, "nightly suite requires the exact cycle-frozen NVKE main revision and source policy")
 	}
 	roles := map[string]string{"nvkectl": "nvkectl", nightlyControllerOutput(profile): "nvke-controller", "controller-chart": "nvke-controller-chart", "nktp": "nktp-chart"}
 	if len(roles) != 4 {
 		return "", e.New(e.CodePipelineDrift, "nightly NVKE roles must be disjoint")
 	}
 	selected := map[string]bool{}
-	commit := ""
 	for _, build := range plan.Builds {
+		for _, producer := range build.ResolvedComponents {
+			if producer.FromSource && strings.TrimSuffix(producer.Repo, ".git") == policy.Repository && producer.Commit != plan.RuntimeSourceCommit {
+				return "", e.New(e.CodeUnpinnedInput, "nightly source-built NVKE closure differs from the cycle-frozen revision")
+			}
+		}
 		component, ok := roles[build.Name]
 		if !ok {
 			continue
@@ -668,23 +724,15 @@ func nightlyPlanHarnessCommit(plan *factory.Plan, profile NightlyProfile) (strin
 			return "", e.New(e.CodePipelineDrift, "nightly NVKE role has ambiguous producers")
 		}
 		producer := build.ResolvedComponents[0]
-		if producer.Name != component || !producer.FromSource || strings.TrimSuffix(producer.Repo, ".git") != "https://github.com/dsx-ai-factory/nvke" || !nightlyGitCommit(producer.Commit) || (commit != "" && producer.Commit != commit) {
-			return "", e.New(e.CodeUnpinnedInput, "nightly NVKE roles do not share one exact source revision")
+		if producer.Name != component || !producer.FromSource || strings.TrimSuffix(producer.Repo, ".git") != policy.Repository || producer.Commit != plan.RuntimeSourceCommit {
+			return "", e.New(e.CodeUnpinnedInput, "nightly NVKE roles do not share the cycle-frozen source revision")
 		}
-		selected[build.Name], commit = true, producer.Commit
+		selected[build.Name] = true
 	}
 	if len(selected) != len(roles) {
 		return "", e.New(e.CodeProvenanceMissing, "nightly Plan omits a required NVKE source role")
 	}
-	// The selected products retain a separate candidate entrypoint. This exact diagnostic pair is the
-	// reviewed test-only exception; it does not authorize another product pin.
-	if commit == "400c24fb6465b042be883d6b62472528520d6291" {
-		if profile.HarnessCommit != "b4f90e2c4fc4ed3d07efc18a22066a7e0b9b99c8" {
-			return "", e.New(e.CodeUnpinnedInput, "selected products require the reviewed candidate harness pin")
-		}
-		return profile.HarnessCommit, nil
-	}
-	return commit, nil
+	return plan.RuntimeSourceCommit, nil
 }
 
 func validateNightlyRun(plan *factory.Plan, digest string, build NightlyBuild, run *lifecycle.Run) error {

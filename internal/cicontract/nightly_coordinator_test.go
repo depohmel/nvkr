@@ -78,7 +78,7 @@ func nightlyCoordinatorFixture(t *testing.T) (nightlyCoordinatorDocument, []map[
 func TestNightlyHostedPreflightCannotBuildOrPublish(t *testing.T) {
 	workflow, _ := nightlyCoordinatorFixture(t)
 	probe := workflow.Jobs["hosted-preflight"]
-	if probe.RunsOn != "ubuntu-24.04-arm" || probe.TimeoutMinutes != 15 ||
+	if probe.RunsOn != "ubuntu-24.04" || probe.TimeoutMinutes != 15 ||
 		probe.If != "github.event_name == 'workflow_dispatch' && inputs.hosted_preflight_only" ||
 		probe.Environment != "" || len(probe.Needs) != 0 || probe.Permissions == nil || len(probe.Permissions) != 0 {
 		t.Fatal("hosted probe must be an isolated, manual, unprivileged hosted job")
@@ -89,7 +89,10 @@ func TestNightlyHostedPreflightCannotBuildOrPublish(t *testing.T) {
 		}
 	}
 	if len(probe.Steps) != 2 || !strings.Contains(probe.Steps[0].Run, "/dev/kvm") ||
-		!strings.Contains(probe.Steps[1].Run, "virt,accel=kvm") ||
+		!strings.Contains(probe.Steps[0].Run, "Linux/x86_64") ||
+		!strings.Contains(probe.Steps[0].Run, "github-hosted") ||
+		!strings.Contains(probe.Steps[1].Run, "q35,accel=kvm") ||
+		!strings.Contains(probe.Steps[1].Run, "qemu-system-x86_64") ||
 		!strings.Contains(probe.Steps[1].Run, "VM status: paused") {
 		t.Fatal("hosted probe must require accessible KVM and verify actual QEMU initialization")
 	}
@@ -125,8 +128,10 @@ func TestNightlyCoordinatorMaintainsExplicitProducerAndRuntimeBoundary(t *testin
 	}
 	if !reflect.DeepEqual(build.Permissions, map[string]string{"contents": "read", "actions": "write"}) ||
 		!reflect.DeepEqual(runtime.Permissions, map[string]string{"contents": "read", "actions": "read"}) ||
-		runtime.RunsOn != "arc-arm64-kvm" || runtime.Environment != "nvkr-arc" ||
-		runtime.Concurrency.CancelInProgress || runtime.Concurrency.Group != "nvkr-nightly-native-arm64-runtime" ||
+		runtime.RunsOn != "${{ matrix.runtime_target == 'native-amd64-vm' && 'ubuntu-24.04' || 'arc-arm64-kvm' }}" ||
+		runtime.Environment != "${{ matrix.runtime_target == 'native-amd64-vm' && 'nvkr-release' || 'nvkr-arc' }}" ||
+		runtime.Env["NATIVE_ARCH"] != "${{ matrix.runtime_target == 'native-amd64-vm' && 'amd64' || 'arm64' }}" ||
+		runtime.Concurrency.CancelInProgress || runtime.Concurrency.Group != "nvkr-nightly-${{ matrix.runtime_target }}-runtime" ||
 		runtime.TimeoutMinutes != 360 {
 		t.Fatal("dispatch credentials escaped into native runtime or shared target admission changed")
 	}
@@ -150,11 +155,12 @@ func TestNightlyCoordinatorMaintainsExplicitProducerAndRuntimeBoundary(t *testin
 				step.With["path"] == "${{ runner.temp }}/nightly-reports-${{ matrix.name }}/cycle.json"
 		}
 	}
-	if !executed || !checkedSource || !publicUpload || len(profiles) != 1 {
+	if !executed || !checkedSource || !publicUpload || len(profiles) != 2 {
 		t.Fatal("nightly omitted real suite execution, exact source or private/public report separation")
 	}
 	for _, profile := range profiles {
-		if profile["name"] != "nvke-nightly-arm64" || profile["network"] != "ovn" {
+		arch := strings.TrimSuffix(strings.TrimPrefix(profile["runtime_target"], "native-"), "-vm")
+		if (arch != "amd64" && arch != "arm64") || profile["name"] != "nvke-nightly-"+arch || profile["network"] != "ovn" {
 			t.Fatal("nightly must select NVIDIA OVN")
 		}
 		input, err := definition.LoadDefinition(t.Context(), filepath.Join("../..", profile["definition"]))
@@ -183,7 +189,7 @@ func TestNightlyCoordinatorMaintainsExplicitProducerAndRuntimeBoundary(t *testin
 		}
 		disk, images := false, false
 		for _, output := range input.Outputs {
-			if !membership[output.Name] {
+			if !membership[output.Name] || output.Platform != "linux/"+arch {
 				t.Fatalf("output %q absent from generated Plan", output.Name)
 			}
 			disk = disk || output.Name == profile["disk_output"]
@@ -217,14 +223,16 @@ func TestNightlyCoordinatorSelectionFailsClosedBeforeDispatch(t *testing.T) {
 		mutation  string
 		want      int
 	}{
-		{"maintained all", "all", "", 1},
-		{"maintained one", "nvke-nightly-arm64", "", 1},
+		{"maintained all", "all", "", 2},
+		{"maintained ARM64", "nvke-nightly-arm64", "", 1},
+		{"maintained AMD64", "nvke-nightly-amd64", "", 1},
 		{"retired upstream", "nvke-nightly-upstream-ovn-arm64", "", 0},
 		{"stale two-profile schedule", "all", "upstream profile", 0},
 		{"upstream network substituted", "all", "upstream network", 0},
 		{"unknown", "unknown", "", 0},
 		{"unreviewed harness", "all", "harness_commit", 0},
 		{"unsupported runtime", "all", "runtime_target", 0},
+		{"cross architecture runtime", "all", "cross runtime", 0},
 		{"unsupported network", "all", "network", 0},
 		{"duplicate profile", "all", "duplicate", 0},
 	} {
@@ -246,6 +254,8 @@ func TestNightlyCoordinatorSelectionFailsClosedBeforeDispatch(t *testing.T) {
 				})
 			} else if test.mutation == "upstream network" {
 				fixture[0]["network"] = "upstream-ovn"
+			} else if test.mutation == "cross runtime" {
+				fixture[0]["runtime_target"] = fixture[1]["runtime_target"]
 			} else if test.mutation != "" {
 				fixture[0][test.mutation] = "unsupported"
 			}
@@ -263,7 +273,7 @@ func TestNightlyCoordinatorSelectionFailsClosedBeforeDispatch(t *testing.T) {
 			command := exec.CommandContext(t.Context(), "bash", "-c", script)
 			command.Dir = root
 			command.Env = []string{"PATH=" + os.Getenv("PATH"), "PROFILE=" + test.selection,
-				"GITHUB_OUTPUT=" + output, "RUNNER_TEMP=" + root}
+				"NVKE_COMMIT=" + nightlyNVKESHA, "GITHUB_OUTPUT=" + output, "RUNNER_TEMP=" + root}
 			log, err := command.CombinedOutput()
 			if test.want == 0 {
 				if err == nil {
@@ -286,6 +296,11 @@ func TestNightlyCoordinatorSelectionFailsClosedBeforeDispatch(t *testing.T) {
 			}
 			if err := json.Unmarshal([]byte(strings.TrimPrefix(strings.TrimSpace(string(raw)), "matrix=")), &matrix); err != nil || len(matrix.Include) != test.want {
 				t.Fatalf("selected wrong profile closure: %v %s", err, raw)
+			}
+			for _, entry := range matrix.Include {
+				if entry["nvke_commit"] != nightlyNVKESHA {
+					t.Fatal("selected matrix lost the cycle-frozen NVKE source")
+				}
 			}
 		})
 	}
@@ -315,11 +330,16 @@ func TestNightlyRuntimeSelectionDoesNotAllocateUnavailableCandidates(t *testing.
 	}{
 		{"no locator", 0, "", false},
 		{"one completed project", 1, "", false},
+		{"both completed projects", 2, "", false},
 		{"retired upstream matrix", 1, "upstream", true},
 		{"wrong source", 1, "sha", true},
 		{"expired locator", 1, "expired", true},
 		{"duplicate locator", 1, "duplicate", true},
 		{"unknown matrix", 1, "matrix", true},
+		{"cross architecture matrix", 1, "cross runtime", true},
+		{"missing NVKE revision", 1, "missing nvke", true},
+		{"mutable NVKE revision", 1, "mutable nvke", true},
+		{"different NVKE source per architecture", 2, "mixed nvke", true},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			root := t.TempDir()
@@ -332,7 +352,8 @@ set -euo pipefail
 for argument in "$@"; do
   if [[ "$argument" == repos/* ]]; then
     case "$argument" in
-      *name=nightly-build-nvke-nightly-arm64-101-3\&per_page=100) cat "$FAKE_GH_ROOT/0.json"; exit ;;
+      *name=nightly-build-nvke-nightly-amd64-101-3\&per_page=100) cat "$FAKE_GH_ROOT/0.json"; exit ;;
+      *name=nightly-build-nvke-nightly-arm64-101-3\&per_page=100) cat "$FAKE_GH_ROOT/1.json"; exit ;;
       *) exit 99 ;;
     esac
   fi
@@ -344,7 +365,7 @@ exit 99
 			}
 			matrix := make([]map[string]string, len(profiles))
 			for i, p := range profiles {
-				matrix[i] = map[string]string{"name": p["name"], "harness_commit": p["harness_commit"]}
+				matrix[i] = map[string]string{"name": p["name"], "nvke_commit": nightlyNVKESHA, "runtime_target": p["runtime_target"]}
 				artifacts := []map[string]any{}
 				if i < test.available {
 					artifact := map[string]any{"name": "nightly-build-" + p["name"] + "-101-3", "expired": false,
@@ -363,10 +384,18 @@ exit 99
 				fixtureJSON(t, filepath.Join(root, string(rune('0'+i))+".json"), map[string]any{"total_count": len(artifacts), "artifacts": artifacts})
 			}
 			switch test.mutation {
+			case "missing nvke":
+				delete(matrix[0], "nvke_commit")
+			case "mutable nvke":
+				matrix[0]["nvke_commit"] = "main"
+			case "mixed nvke":
+				matrix[0]["nvke_commit"] = strings.Repeat("e", 40)
 			case "matrix":
 				matrix[0]["name"] = "foreign"
 			case "upstream":
 				matrix[0]["name"] = "nvke-nightly-upstream-ovn-arm64"
+			case "cross runtime":
+				matrix[0]["runtime_target"] = matrix[1]["runtime_target"]
 			}
 			raw, err := json.Marshal(map[string]any{"include": matrix})
 			if err != nil {
@@ -406,6 +435,86 @@ exit 99
 			}
 			if len(selected.Include) != test.available || lines[1] != "available="+map[bool]string{true: "true", false: "false"}[test.available > 0] {
 				t.Fatalf("wrong runtime eligibility: %s", raw)
+			}
+			for _, entry := range selected.Include {
+				if entry["nvke_commit"] != nightlyNVKESHA {
+					t.Fatal("runtime matrix changed the frozen NVKE source")
+				}
+			}
+		})
+	}
+}
+
+func TestNightlyCoordinatorFreezesAuthenticatedNVKEMainOnce(t *testing.T) {
+	workflow, _ := nightlyCoordinatorFixture(t)
+	resolver := workflow.Jobs["resolve-source"]
+	if resolver.RunsOn != "ubuntu-24.04" || resolver.TimeoutMinutes != 5 || len(resolver.Permissions) != 0 || len(resolver.Steps) != 1 || resolver.Outputs["nvke_commit"] != "${{ steps.source.outputs.nvke_commit }}" || resolver.Steps[0].Env["GH_TOKEN"] != "${{ secrets.NKE_SOURCE_TOKEN }}" {
+		t.Fatal("source resolution lost its authenticated, bounded single-owner binding")
+	}
+	for _, job := range []string{"select", "source-contract"} {
+		if !reflect.DeepEqual(workflow.Jobs[job].Needs, []string{"resolve-source"}) {
+			t.Fatalf("%s does not depend on the one source resolution", job)
+		}
+	}
+	for _, test := range []struct {
+		name, ref, kind, sha    string
+		credential, apiOK, pass bool
+	}{
+		{"exact main", "refs/heads/main", "commit", nightlyNVKESHA, true, true, true},
+		{"other ref", "refs/heads/other", "commit", nightlyNVKESHA, true, true, false},
+		{"tag object", "refs/heads/main", "tag", nightlyNVKESHA, true, true, false},
+		{"mutable SHA", "refs/heads/main", "commit", "main", true, true, false},
+		{"missing SHA", "refs/heads/main", "commit", "", true, true, false},
+		{"uppercase SHA", "refs/heads/main", "commit", strings.ToUpper(nightlyNVKESHA), true, true, false},
+		{"API failure", "refs/heads/main", "commit", nightlyNVKESHA, true, false, false},
+		{"missing credential", "refs/heads/main", "commit", nightlyNVKESHA, false, true, false},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			root := t.TempDir()
+			timeout, err := exec.LookPath("timeout")
+			if err != nil {
+				timeout, err = exec.LookPath("gtimeout")
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err = os.Symlink(timeout, filepath.Join(root, "timeout")); err != nil {
+				t.Fatal(err)
+			}
+			fixtureJSON(t, filepath.Join(root, "response.json"), map[string]any{"ref": test.ref, "object": map[string]string{"type": test.kind, "sha": test.sha}})
+			stub := `#!/usr/bin/env bash
+set -euo pipefail
+printf '%s\n' "$*" >> "$SOURCE_FIXTURE/calls"
+[[ "$*" == 'api --hostname github.com -H X-GitHub-Api-Version: 2026-03-10 repos/dsx-ai-factory/nvke/git/ref/heads/main' ]]
+[[ "$SOURCE_API_OK" == true ]]
+cat "$SOURCE_FIXTURE/response.json"
+`
+			if err = os.WriteFile(filepath.Join(root, "gh"), []byte(stub), 0o700); err != nil {
+				t.Fatal(err)
+			}
+			output := filepath.Join(root, "outputs")
+			command := exec.CommandContext(t.Context(), "bash", "-c", resolver.Steps[0].Run)
+			token := ""
+			if test.credential {
+				token = "synthetic-source-read"
+			}
+			command.Env = []string{"PATH=" + root + string(os.PathListSeparator) + os.Getenv("PATH"), "GH_TOKEN=" + token, "SOURCE_FIXTURE=" + root, "SOURCE_API_OK=" + map[bool]string{true: "true", false: "false"}[test.apiOK], "GITHUB_OUTPUT=" + output}
+			log, runErr := command.CombinedOutput()
+			raw, readErr := os.ReadFile(output)
+			if test.pass {
+				if runErr != nil || readErr != nil || string(raw) != "nvke_commit="+nightlyNVKESHA+"\n" {
+					t.Fatalf("exact source not frozen: %v %v %s %s", runErr, readErr, raw, log)
+				}
+			} else if runErr == nil || !os.IsNotExist(readErr) {
+				t.Fatalf("invalid source emitted outputs: %v %v %s", runErr, readErr, raw)
+			}
+			calls, callErr := os.ReadFile(filepath.Join(root, "calls"))
+			if test.credential {
+				if callErr != nil || len(strings.Split(strings.TrimSpace(string(calls)), "\n")) != 1 {
+					t.Fatal("source resolution was retried or skipped", callErr)
+				}
+			} else if !os.IsNotExist(callErr) {
+				t.Fatal("API called before credential admission")
 			}
 		})
 	}

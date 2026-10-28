@@ -82,6 +82,7 @@ func TestNightlyAuthoredRuntimeStepConsumesActualCycleWriter(t *testing.T) {
 		{name: "successful Go skip without cycle", skip: true},
 		{name: "wrong profile", phase: "runtime", envKey: "NVKR_NIGHTLY_PROFILE", envValue: "other"},
 		{name: "wrong source", phase: "runtime", envKey: "GITHUB_SHA", envValue: strings.Repeat("b", 40)},
+		{name: "wrong NVKE main source", phase: "runtime", envKey: "NVKR_NVKE_SOURCE_COMMIT", envValue: strings.Repeat("d", 40)},
 		{name: "wrong phase", phase: "preparation"},
 		{name: "wrong coordinator run", phase: "runtime", envKey: "GITHUB_RUN_ID", envValue: "124"},
 		{name: "wrong coordinator attempt", phase: "runtime", envKey: "GITHUB_RUN_ATTEMPT", envValue: "3"},
@@ -93,7 +94,7 @@ func TestNightlyAuthoredRuntimeStepConsumesActualCycleWriter(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			public := t.TempDir()
 			profile := NightlyProfile{Name: "fixture-profile"}
-			build := NightlyBuild{CoordinatorRun: "123", CoordinatorAttempt: "2", ProducerRun: 456, ProducerAttempt: 1, SourceCommit: strings.Repeat("a", 40)}
+			build := NightlyBuild{CoordinatorRun: "123", CoordinatorAttempt: "2", ProducerRun: 456, ProducerAttempt: 1, SourceCommit: strings.Repeat("a", 40), NVKECommit: strings.Repeat("c", 40)}
 			if !test.skip {
 				if err := writeNightlyCycle(t.Context(), public, profile, build, "fixture-subject", test.phase, test.result); err != nil {
 					t.Fatal(err)
@@ -121,7 +122,8 @@ func TestNightlyAuthoredRuntimeStepConsumesActualCycleWriter(t *testing.T) {
 			values := map[string]string{"PATH": os.Getenv("PATH"), "NVKR_NIGHTLY_REPORTS": public,
 				"NVKR_NIGHTLY_PROFILE": profile.Name, "GITHUB_RUN_ID": build.CoordinatorRun,
 				"GITHUB_RUN_ATTEMPT": build.CoordinatorAttempt, "GITHUB_SHA": build.SourceCommit,
-				"FIXTURE_GO_RESULT": "--- PASS: TestNightlyPublishedCandidate"}
+				"NVKR_NVKE_SOURCE_COMMIT": build.NVKECommit,
+				"FIXTURE_GO_RESULT":       "--- PASS: TestNightlyPublishedCandidate"}
 			if test.skip {
 				values["FIXTURE_GO_RESULT"] = "--- SKIP: TestNightlyPublishedCandidate"
 			}
@@ -196,7 +198,7 @@ func TestNightlyProfilesUsePinnedNestedRunbooksLayout(t *testing.T) {
 		t.Run(fmt.Sprintf("metadata=%t", metadata), func(t *testing.T) {
 			publication, release := nightlyProfilesPublicationFixture(t, metadata)
 			defer publication.Close()
-			destination, err := nightlyProfiles(t.Context(), publication, release, "controller-profiles", t.TempDir())
+			destination, err := nightlyProfiles(t.Context(), publication, release, "controller-profiles", t.TempDir(), "arm64")
 			if !metadata {
 				assertNightlyCode(t, err, e.CodeVerifyFailed)
 				if destination != "" {
@@ -329,7 +331,7 @@ func nightlyRuntimeRelease() lifecycle.Release {
 	release := lifecycle.Release{}
 	for _, role := range runtimeImages {
 		digest := "sha256:" + strings.Repeat("a", 64)
-		release.Artifacts = append(release.Artifacts, lifecycle.Artifact{Name: role + "-image-arm64", Kind: lifecycle.OutputOCI, Digest: digest, Reference: "registry.example:5000/team/" + role + "@" + digest, Components: []string{role + "-image"}})
+		release.Artifacts = append(release.Artifacts, lifecycle.Artifact{Name: role + "-image-arm64", Kind: lifecycle.OutputOCI, OS: "linux", Arch: "arm64", Digest: digest, Reference: "registry.example:5000/team/" + role + "@" + digest, Components: []string{role + "-image"}})
 	}
 	return release
 }
@@ -342,7 +344,7 @@ func TestNightlyRuntimeImageRolesPreserveExactRegistryAndDigest(t *testing.T) {
 		}
 	}
 	release := nightlyRuntimeRelease()
-	values, err := nightlyRuntimeValues(plan, release)
+	values, err := nightlyRuntimeValues(plan, release, "arm64")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -397,7 +399,7 @@ func TestNightlyRuntimeImageRolesPreserveExactRegistryAndDigest(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			changed := nightlyRuntimeRelease()
 			test.change(&changed)
-			_, err := nightlyRuntimeValues(plan, changed)
+			_, err := nightlyRuntimeValues(plan, changed, "arm64")
 			assertNightlyCode(t, err, e.CodeVerifyFailed)
 		})
 	}
@@ -546,23 +548,38 @@ func TestNightlySuiteUsesAdmittedInterpreterAndActualEntrypoint(t *testing.T) {
 		}
 	}
 	t.Setenv("PATH", ambient)
-	runner := Runner{Env: []string{"PATH=" + admitted}}
-	entry := filepath.Join(source, "controller/hack/ci/nico-vms-e2e.sh")
-	if err := os.MkdirAll(filepath.Dir(entry), 0700); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(filepath.Dir(entry), "nico-vms-candidate.sh"), []byte("candidate only"), 0600); err != nil {
-		t.Fatal(err)
+	runner := Runner{Work: t.TempDir(), Env: []string{"PATH=" + admitted}}
+	for _, path := range nightlySourceFiles[1:] {
+		path = filepath.Join(source, path)
+		if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte("synthetic stock input\n"), 0600); err != nil {
+			t.Fatal(err)
+		}
 	}
 	_, err := nightlySuiteCommand(t.Context(), runner, source)
 	assertNightlyCode(t, err, e.CodeVerifyFailed)
-	if err := os.WriteFile(entry, []byte("#!/bin/sh\n"), 0600); err != nil {
+	if entries, err := os.ReadDir(runner.Work); err != nil || len(entries) != 0 {
+		t.Fatal("rejected source wrote an adapter", entries, err)
+	}
+	if err := os.WriteFile(filepath.Join(source, nightlySourceFiles[0]), []byte("synthetic suite\n"), 0600); err != nil {
 		t.Fatal(err)
 	}
 	command, err := nightlySuiteCommand(t.Context(), runner, source)
-	if err != nil || command.Path != filepath.Join(admitted, "bash") || command.Args[1] != entry {
+	entry, library := filepath.Join(runner.Work, "nightly-adapter/entrypoint.sh"), filepath.Join(runner.Work, "nightly-adapter/candidate.sh")
+	if err != nil || command.Path != filepath.Join(admitted, "bash") || len(command.Args) != 4 || command.Args[1] != entry || command.Args[2] != source || command.Args[3] != library || command.Dir != source {
 		t.Fatal(command, err)
 	}
+	for path, want := range map[string][]byte{entry: nightlyCandidateEntrypoint, library: nightlyCandidateLibrary} {
+		raw, err := os.ReadFile(path)
+		info, statErr := os.Stat(path)
+		if err != nil || statErr != nil || !bytes.Equal(raw, want) || info.Mode().Perm() != 0600 {
+			t.Fatal("adapter differs from embedded bytes or private mode", path, err, statErr)
+		}
+	}
+	_, err = nightlySuiteCommand(t.Context(), runner, source)
+	assertNightlyCode(t, err, e.CodeImmutableViolation)
 	_, err = nightlySuiteCommand(t.Context(), Runner{Env: []string{"PATH=" + t.TempDir()}}, source)
 	assertNightlyCode(t, err, e.CodeEngineCapability)
 	var missingContext context.Context
@@ -574,14 +591,18 @@ func TestNightlySuiteUsesAdmittedInterpreterAndActualEntrypoint(t *testing.T) {
 	assertNightlyCode(t, err, e.CodeTimeout)
 }
 
-func TestNightlySourceAdmitsBothReviewedEntrypoints(t *testing.T) {
+func TestNightlySourceAdmitsExactStockGoSuiteWithoutCandidateEntrypoint(t *testing.T) {
 	for _, test := range []struct {
-		name           string
-		candidate, e2e bool
+		name, missing   string
+		dirty, wrongPin bool
 	}{
-		{"both reviewed entrypoints", true, true},
-		{"missing suite", true, false},
-		{"generic suite without candidate adapter", false, true},
+		{name: "stock Go suite with no candidate entrypoint"},
+		{name: "missing suite", missing: "controller/test/e2e/suite_test.go"},
+		{name: "missing stock helper", missing: "controller/hack/backend-e2e-lib.sh"},
+		{name: "missing deploy input", missing: "deploy/nvke-deploy.sh"},
+		{name: "missing matrix metadata", missing: "controller/test/fixtures/fleet-releases/index.yaml"},
+		{name: "wrong source pin", wrongPin: true},
+		{name: "additional source file", dirty: true},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			source, work := privateTestDir(t), privateTestDir(t)
@@ -598,24 +619,31 @@ func TestNightlySourceAdmitsBothReviewedEntrypoints(t *testing.T) {
 				return strings.TrimSpace(string(raw))
 			}
 			git("init", "-q")
-			directory := filepath.Join(source, "controller/hack/ci")
-			if err := os.MkdirAll(directory, 0700); err != nil {
-				t.Fatal(err)
-			}
-			if test.candidate {
-				if err := os.WriteFile(filepath.Join(directory, "nico-vms-candidate.sh"), []byte("candidate"), 0600); err != nil {
+			for _, path := range nightlySourceFiles {
+				if path == test.missing {
+					continue
+				}
+				path = filepath.Join(source, path)
+				if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
 					t.Fatal(err)
 				}
-			}
-			if test.e2e {
-				if err := os.WriteFile(filepath.Join(directory, "nico-vms-e2e.sh"), []byte("e2e"), 0600); err != nil {
+				if err := os.WriteFile(path, []byte("synthetic stock input\n"), 0600); err != nil {
 					t.Fatal(err)
 				}
 			}
 			git("add", ".")
 			git("-c", "commit.gpgsign=false", "commit", "-qm", "fixture")
-			err := nightlySource(t.Context(), Runner{Work: work, Env: NativeEnvironment()}, source, git("rev-parse", "HEAD"))
-			if test.candidate && test.e2e {
+			pin := git("rev-parse", "HEAD")
+			if test.wrongPin {
+				pin = strings.Repeat("a", 40)
+			}
+			if test.dirty {
+				if err := os.WriteFile(filepath.Join(source, "injected-helper.sh"), []byte("fixture\n"), 0600); err != nil {
+					t.Fatal(err)
+				}
+			}
+			err := nightlySource(t.Context(), Runner{Work: work, Env: NativeEnvironment()}, source, pin)
+			if test.missing == "" && !test.dirty && !test.wrongPin {
 				if err != nil {
 					t.Fatal(err)
 				}
@@ -738,65 +766,23 @@ func TestNightlyPreparationCachesArePrivateAndCredentialsExcluded(t *testing.T) 
 	assertNightlyCode(t, err, e.CodeEngineCapability)
 }
 
-func TestNightlyPublicDiagnosticsRequireMarkerAndAllowlist(t *testing.T) {
-	for _, mode := range []string{"absent", "valid", "marker symlink", "report symlink"} {
-		t.Run(mode, func(t *testing.T) {
-			suite, public := t.TempDir(), t.TempDir()
-			for name, data := range map[string]string{"junit.xml": "<testsuite/>", "candidate-outcome.json": "{}", "private-log": "secret"} {
-				if err := os.WriteFile(filepath.Join(suite, name), []byte(data), 0600); err != nil {
-					t.Fatal(err)
-				}
-			}
-			marker := filepath.Join(suite, "SAFE_TO_UPLOAD")
-			if mode == "marker symlink" {
-				if err := os.Symlink(filepath.Join(suite, "private-log"), marker); err != nil {
-					t.Fatal(err)
-				}
-			} else if mode != "absent" {
-				if err := os.WriteFile(marker, nil, 0600); err != nil {
-					t.Fatal(err)
-				}
-			}
-			if mode == "report symlink" {
-				if err := os.Rename(filepath.Join(suite, "junit.xml"), filepath.Join(suite, "real.xml")); err != nil {
-					t.Fatal(err)
-				}
-				if err := os.Symlink(filepath.Join(suite, "real.xml"), filepath.Join(suite, "junit.xml")); err != nil {
-					t.Fatal(err)
-				}
-			}
-			err := nightlyPublicDiagnostics(t.Context(), suite, public)
-			if strings.Contains(mode, "symlink") {
-				assertNightlyCode(t, err, e.CodeVerifyFailed)
-				return
-			}
-			if err != nil {
-				t.Fatal(err)
-			}
-			entries, err := os.ReadDir(public)
-			if err != nil {
-				t.Fatal(err)
-			}
-			if mode == "absent" {
-				if len(entries) != 0 {
-					t.Fatal(entries)
-				}
-				return
-			}
-			if len(entries) != 2 {
-				t.Fatal(entries)
-			}
-			for _, entry := range entries {
-				if entry.Name() != "junit.xml" && entry.Name() != "candidate-outcome.json" {
-					t.Fatal(entry.Name())
-				}
-			}
-			var verdict map[string]any
-			raw, err := os.ReadFile(filepath.Join(public, "candidate-outcome.json"))
-			if err != nil || json.Unmarshal(raw, &verdict) != nil {
-				t.Fatal(err)
-			}
-		})
+func TestNightlyCycleKeepsSuiteReportsPrivate(t *testing.T) {
+	private, public := t.TempDir(), t.TempDir()
+	for name, data := range map[string]string{"junit.xml": "<testsuite>private diagnostic</testsuite>", "candidate-outcome.json": "{}", "SAFE_TO_UPLOAD": "", "private-log": "private fixture"} {
+		if err := privateWrite(filepath.Join(private, name), []byte(data)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := writeNightlyCycle(t.Context(), public, NightlyProfile{Name: "fixture-profile"}, NightlyBuild{}, "fixture-subject", "runtime", nil); err != nil {
+		t.Fatal(err)
+	}
+	entries, err := os.ReadDir(public)
+	if err != nil || len(entries) != 1 || entries[0].Name() != "cycle.json" {
+		t.Fatal("public attachments must contain only the parent-authored cycle", entries, err)
+	}
+	raw, err := os.ReadFile(filepath.Join(public, "cycle.json"))
+	if err != nil || bytes.Contains(raw, []byte("private diagnostic")) {
+		t.Fatal("private suite data reached the public cycle", err)
 	}
 }
 

@@ -14,7 +14,6 @@ import (
 	"time"
 
 	"github.com/dsx-ai-factory/nvkr/internal/ownedcmd"
-	e "github.com/dsx-ai-factory/nvkr/pkg/nvkr/errors"
 	"github.com/dsx-ai-factory/nvkr/pkg/nvkr/factory"
 	"go.yaml.in/yaml/v3"
 )
@@ -122,69 +121,46 @@ func TestNightlyWorkflowSuiteSelectionMatchesGoCohortOwner(t *testing.T) {
 	for _, test := range []struct {
 		name   string
 		change func(*factory.Plan)
-		legacy bool
 	}{
-		{"current frozen source", func(*factory.Plan) {}, false},
-		{"approved main harness", func(p *factory.Plan) {
-			for i := range p.Builds {
-				p.Builds[i].ResolvedComponents[0].Commit = "400c24fb6465b042be883d6b62472528520d6291"
-			}
-		}, false},
-		{"main with unapproved harness", func(p *factory.Plan) {
-			for i := range p.Builds {
-				p.Builds[i].ResolvedComponents[0].Commit = "400c24fb6465b042be883d6b62472528520d6291"
-			}
-		}, false},
-		{"main with retired harness", func(p *factory.Plan) {
-			for i := range p.Builds {
-				p.Builds[i].ResolvedComponents[0].Commit = "400c24fb6465b042be883d6b62472528520d6291"
-			}
-		}, false},
-		{"legacy configured source", func(*factory.Plan) {}, true},
-		{"missing role", func(p *factory.Plan) { p.Builds = p.Builds[1:] }, false},
-		{"mixed revisions", func(p *factory.Plan) { p.Builds[0].ResolvedComponents[0].Commit = strings.Repeat("e", 40) }, false},
-		{"duplicate replaces missing role", func(p *factory.Plan) { p.Builds[len(p.Builds)-1] = p.Builds[0] }, false},
+		{"current frozen source", func(*factory.Plan) {}},
+		{"missing frozen source", func(p *factory.Plan) { p.RuntimeSourceCommit = "" }},
+		{"stale frozen source", func(p *factory.Plan) { p.RuntimeSourceCommit = strings.Repeat("e", 40) }},
+		{"missing source policy", func(p *factory.Plan) { p.Environment.GitHubRuntimeSource = nil }},
+		{"wrong source ref", func(p *factory.Plan) { p.Environment.GitHubRuntimeSource.Ref = "refs/heads/other" }},
+		{"legacy runtime disabled", func(p *factory.Plan) { p.Environment.GitHubRuntimePlan = false }},
+		{"missing role", func(p *factory.Plan) { p.Builds = p.Builds[1:] }},
+		{"mixed revisions", func(p *factory.Plan) { p.Builds[0].ResolvedComponents[0].Commit = strings.Repeat("e", 40) }},
+		{"non-site NVKE material differs", func(p *factory.Plan) {
+			material := p.Builds[0]
+			material.Name = "disk-material"
+			material.ResolvedComponents = append(material.ResolvedComponents[:0:0], material.ResolvedComponents...)
+			material.ResolvedComponents[0].Commit = strings.Repeat("e", 40)
+			p.Builds = append(p.Builds, material)
+		}},
+		{"duplicate replaces missing role", func(p *factory.Plan) { p.Builds[len(p.Builds)-1] = p.Builds[0] }},
 		{"extra role producer", func(p *factory.Plan) {
 			p.Builds[0].ResolvedComponents = append(p.Builds[0].ResolvedComponents, p.Builds[1].ResolvedComponents[0])
-		}, false},
-		{"wrong repository", func(p *factory.Plan) { p.Builds[0].ResolvedComponents[0].Repo = "https://github.com/foreign/nvke" }, false},
-		{"repository suffix attack", func(p *factory.Plan) {
-			p.Builds[0].ResolvedComponents[0].Repo = "https://github.com/dsx-ai-factory/nvke.attacker"
-		}, false},
-		{"acquired producer", func(p *factory.Plan) { p.Builds[0].ResolvedComponents[0].FromSource = false }, false},
-		{"invalid revision", func(p *factory.Plan) { p.Builds[0].ResolvedComponents[0].Commit = "main" }, false},
+		}},
+		{"wrong repository", func(p *factory.Plan) { p.Builds[0].ResolvedComponents[0].Repo = "https://github.com/foreign/nvke" }},
+		{"repository suffix attack", func(p *factory.Plan) { p.Builds[0].ResolvedComponents[0].Repo += ".attacker" }},
+		{"acquired producer", func(p *factory.Plan) { p.Builds[0].ResolvedComponents[0].FromSource = false }},
+		{"invalid revision", func(p *factory.Plan) { p.Builds[0].ResolvedComponents[0].Commit = "main" }},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			profile := profile
-			if test.name == "approved main harness" {
-				profile.HarnessCommit = "b4f90e2c4fc4ed3d07efc18a22066a7e0b9b99c8"
-			}
-			if test.name == "main with retired harness" {
-				profile.HarnessCommit = "a32067108ab89d1e2b2b6720766ffe97270a166a"
-			}
-			plan, _ := nightlyRuntimeCompiledFixture(t, profile, build, strings.Repeat("d", 40))
+			plan, _ := nightlyRuntimeCompiledFixture(t, profile, build, build.NVKECommit)
 			test.change(plan)
 			root := t.TempDir()
 			nightlyWorkflowWrite(t, root, "inputs/testing/nightly-profiles.json", []NightlyProfile{profile})
-			values := map[string]string{"PROFILE": profile.Name, "PINNED_SUITE": profile.HarnessCommit, "RUNTIME_PLAN": "true"}
+			nightlyWorkflowWrite(t, root, ".nightly-private/runtime-inputs/plan.json", plan)
+			values := map[string]string{"PROFILE": profile.Name, "NVKE_COMMIT": build.NVKECommit, "RUNTIME_PLAN": "true"}
 			expected, expectedErr := nightlyPlanHarnessCommit(plan, profile)
-			if test.name == "main with retired harness" {
-				assertNightlyCode(t, expectedErr, e.CodeUnpinnedInput)
-			}
-			if test.legacy {
-				values["RUNTIME_PLAN"] = "false"
-				expected, expectedErr = profile.HarnessCommit, nil
-				// The legacy script must not require a runtime artifact at all.
-			} else {
-				nightlyWorkflowWrite(t, root, ".nightly-private/runtime-inputs/plan.json", plan)
-			}
 			output, err := nightlyWorkflowRun(t, root, script, values)
 			if expectedErr != nil {
 				if err == nil || output != "" {
-					t.Fatalf("authored suite selector accepted rejected Go cohort: output=%q error=%v owner=%v", output, err, expectedErr)
+					t.Fatalf("authored selector accepted rejected cohort: %q, %v; owner %v", output, err, expectedErr)
 				}
 			} else if err != nil || output != "commit="+expected+"\n" {
-				t.Fatalf("suite selection differs from Go owner: got=%q error=%v expected=%q", output, err, expected)
+				t.Fatalf("suite differs from Go owner: %q, %v, want %q", output, err, expected)
 			}
 		})
 	}
@@ -200,10 +176,11 @@ func TestNightlyWorkflowCandidateSelectsOnlyExactCycleAndBooleanPolicy(t *testin
 		policy string
 	}{
 		{"runtime enabled", func(map[string]any, map[string]any) {}, true, "true"},
-		{"legacy absent policy", func(_ map[string]any, env map[string]any) { delete(env, "githubRuntimePlan") }, true, "false"},
-		{"legacy explicit false", func(_ map[string]any, env map[string]any) { env["githubRuntimePlan"] = false }, true, "false"},
+		{"legacy absent policy", func(_ map[string]any, env map[string]any) { delete(env, "githubRuntimePlan") }, false, ""},
+		{"legacy explicit false", func(_ map[string]any, env map[string]any) { env["githubRuntimePlan"] = false }, false, ""},
 		{"string policy", func(_ map[string]any, env map[string]any) { env["githubRuntimePlan"] = "true" }, false, ""},
 		{"wrong profile", func(b map[string]any, _ map[string]any) { b["profile"].(map[string]any)["name"] = "other" }, false, ""},
+		{"wrong NVKE source", func(b map[string]any, _ map[string]any) { b["nvkeCommit"] = strings.Repeat("e", 40) }, false, ""},
 		{"wrong source", func(b map[string]any, _ map[string]any) { b["sourceCommit"] = strings.Repeat("e", 40) }, false, ""},
 		{"wrong coordinator", func(b map[string]any, _ map[string]any) { b["coordinatorRun"] = "101" }, false, ""},
 		{"wrong attempt", func(b map[string]any, _ map[string]any) { b["coordinatorAttempt"] = "3" }, false, ""},
@@ -224,12 +201,12 @@ func TestNightlyWorkflowCandidateSelectsOnlyExactCycleAndBooleanPolicy(t *testin
 			if err := json.Unmarshal(raw, &locator); err != nil {
 				t.Fatal(err)
 			}
-			environment := map[string]any{"githubRuntimePlan": true}
+			environment := map[string]any{"githubRuntimePlan": true, "githubRuntimeSource": map[string]any{"repository": "https://github.com/dsx-ai-factory/nvke", "ref": "refs/heads/main"}}
 			test.change(locator, environment)
 			nightlyWorkflowWrite(t, root, "inputs/testing/nightly-profiles.json", []NightlyProfile{profile})
 			nightlyWorkflowWrite(t, root, profile.Environment, environment)
 			nightlyWorkflowWrite(t, root, ".nightly-private/build/build.json", locator)
-			values := map[string]string{"PROFILE": profile.Name, "GITHUB_SHA": build.SourceCommit, "GITHUB_RUN_ID": build.CoordinatorRun, "GITHUB_RUN_ATTEMPT": build.CoordinatorAttempt}
+			values := map[string]string{"PROFILE": profile.Name, "NVKE_COMMIT": build.NVKECommit, "GITHUB_SHA": build.SourceCommit, "GITHUB_RUN_ID": build.CoordinatorRun, "GITHUB_RUN_ATTEMPT": build.CoordinatorAttempt}
 			output, err := nightlyWorkflowRun(t, root, script, values)
 			if test.pass {
 				if err != nil || output != "producer_run=200\nruntime_plan="+test.policy+"\n" {

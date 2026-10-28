@@ -96,7 +96,7 @@ lint: ## Run golangci-lint (see .golangci.yml; install: https://golangci-lint.ru
 .PHONY: shellcheck
 shellcheck: ## Check executable shell surfaces for warning-or-higher defects.
 	@command -v shellcheck >/dev/null 2>&1 || { echo "shellcheck not installed — https://www.shellcheck.net/"; exit 1; }
-	shellcheck -S warning scripts/*.sh demos/*.sh toolchains/**/*.sh
+	shellcheck -S warning scripts/*.sh demos/*.sh toolchains/**/*.sh internal/nvkedemo/nightly-candidate*.sh
 
 .PHONY: vulncheck
 vulncheck: go-version-check ## Check reachable Go vulnerabilities using the pinned upstream scanner.
@@ -236,6 +236,10 @@ workflows-check: workflow-generator pipeline-dev-check nvke-split-check catalog-
 		--definition "$$definition" --environment "$$environment" \
 		--qualification-policy inputs/policies/nvke-qualification.yaml --root . --check
 	bin/nvkr-exec run generate --engine github \
+		--definition inputs/definitions/demo/amd64-nvidia-kvm.json \
+		--environment inputs/environments/github-nightly-nvidia-amd64.json \
+		--root . --runtime --check
+	bin/nvkr-exec run generate --engine github \
 		--definition inputs/definitions/demo/arm64-nvidia-kvm.json \
 		--environment inputs/environments/github-nightly-nvidia.json \
 		--root . --runtime --check
@@ -272,6 +276,10 @@ workflows-generate: workflow-generator pipeline-dev-generate nvke-split-generate
 	 bin/nvkr-exec run generate --engine github \
 		--definition "$$definition" --environment "$$environment" \
 		--qualification-policy inputs/policies/nvke-qualification.yaml \
+		--root .
+	bin/nvkr-exec run generate --engine github \
+		--definition inputs/definitions/demo/amd64-nvidia-kvm.json \
+		--environment inputs/environments/github-nightly-nvidia-amd64.json \
 		--root .
 	bin/nvkr-exec run generate --engine github \
 		--definition inputs/definitions/demo/arm64-nvidia-kvm.json \

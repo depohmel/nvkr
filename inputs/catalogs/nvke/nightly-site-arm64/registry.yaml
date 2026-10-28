@@ -120,7 +120,7 @@ components:
     artifactPath: cli/bin/nvkectl
     writeDir: cli/bin
     versionStamp:
-      NVKECTL_VERSION: '{{.Tag}}'
+      NVKECTL_VERSION: 'v0.0.0-nightly+{{.Commit}}'
       NVKECTL_COMMIT: '{{.Commit}}'
       NVKECTL_DATE: '{{.Date}}'
     buildCommand:
@@ -140,7 +140,7 @@ components:
     outputType: oci-image
     platforms: [linux/arm64]
     versionStamp:
-      BUILD_VERSION: '{{.Tag}}'
+      BUILD_VERSION: 'v0.0.0-nightly+{{.Commit}}'
       GIT_VERSION: '{{.Commit}}'
     buildCommand:
       - sh
@@ -151,15 +151,17 @@ components:
     source: nvke-controller-helm
     platforms: [linux/arm64]
     outputType: tarball
-    artifactPath: charts/nvke-controller-0.22.0.tgz
+    artifactPath: charts/nvke-controller-nightly.tgz
     writeDir: charts
+    versionStamp:
+      BUILD_VERSION: '0.0.0-nightly+{{.Commit}}'
     helm:
       chart: .
       images:
         controller:
           values:
             digest: image.digest
-    # The upstream Chart.yaml version is a placeholder; package the selected release.
+    # The upstream Chart.yaml version is a placeholder; identify the nightly commit.
     # The final package is bound to the produced controller digest.
     buildCommand:
       - sh
@@ -168,14 +170,18 @@ components:
         printf '%s\n' \
           '4d6e3a69e6203094d564d5d4e94325b1f7209421dc7e832a96d2510295e03f1d  /src/nvkr-chart-tools/helm' \
           | sha256sum --quiet -c -
-        exec timeout --kill-after=10s 60s /src/nvkr-chart-tools/helm package controller/deploy/charts/controller --version=0.22.0 --app-version=v0.22.0 --destination=charts/
+        timeout --kill-after=10s 60s /src/nvkr-chart-tools/helm package controller/deploy/charts/controller \
+          --version="${BUILD_VERSION:?}" --app-version="$BUILD_VERSION" --destination=charts/
+        mv -- "charts/nvke-controller-${BUILD_VERSION}.tgz" charts/nvke-controller-nightly.tgz
   nktp-chart:
     fromSource: true
     source: nvke-nktp-helm
     platforms: [linux/arm64]
     outputType: tarball
-    artifactPath: charts/nktp-0.22.0.tgz
+    artifactPath: charts/nktp-nightly.tgz
     writeDir: charts
+    versionStamp:
+      BUILD_VERSION: '0.0.0-nightly+{{.Commit}}'
     buildCommand:
       - sh
       - -euc
@@ -183,4 +189,6 @@ components:
         printf '%s\n' \
           '4d6e3a69e6203094d564d5d4e94325b1f7209421dc7e832a96d2510295e03f1d  /src/nvkr-chart-tools/helm' \
           | sha256sum --quiet -c -
-        exec timeout --kill-after=10s 60s /src/nvkr-chart-tools/helm package nktp/deploy/charts/nktp --version=0.22.0 --app-version=v0.22.0 --destination=charts/
+        timeout --kill-after=10s 60s /src/nvkr-chart-tools/helm package nktp/deploy/charts/nktp \
+          --version="${BUILD_VERSION:?}" --app-version="$BUILD_VERSION" --destination=charts/
+        mv -- "charts/nktp-${BUILD_VERSION}.tgz" charts/nktp-nightly.tgz

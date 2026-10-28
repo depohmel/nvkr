@@ -14,10 +14,10 @@ import (
 func TestNVKEReleasePinsStayAligned(t *testing.T) {
 	for _, directory := range []string{
 		"nvke/release", "nvke/release-components", "nvke/module-tags", "nvke/module-cli-arm64",
-		"nvke/local-site-arm64", "nvke/native-site-arm64", "nvke/nightly-site-arm64",
+		"nvke/local-site-arm64", "nvke/native-site-arm64", "nvke/nightly-site-arm64", "nvke/nightly-site-amd64",
 		"node-images/release", "node-images/diagnostic",
-		"controller-profiles/nvidia-arm64", "controller-profiles/upstream-arm64", "controller-profiles/native-nvidia-arm64",
-		"nicosim", "tools/native", "runtime-dependencies",
+		"controller-profiles/nvidia-arm64", "controller-profiles/upstream-arm64", "controller-profiles/native-nvidia-arm64", "controller-profiles/nvidia-amd64",
+		"nicosim", "nicosim/amd64", "tools/native", "runtime-dependencies",
 	} {
 		t.Run(directory, func(t *testing.T) {
 			root := filepath.Join("../../../inputs/catalogs", directory)

@@ -224,6 +224,7 @@ func TestClosureListsTheMaintainedBundles(t *testing.T) {
 		t.Fatal("the maintained policy does not name its dependent bundles")
 	}
 	wantAdditional := []RunInput{
+		{Definition: "inputs/definitions/demo/amd64-nvidia-kvm.json", Environment: "inputs/environments/github-nightly-nvidia-amd64.json"},
 		{Definition: "inputs/definitions/nvke/core.yaml", Environment: "inputs/environments/github-nvke-core.yaml"},
 		{Definition: "inputs/definitions/nvke/services.yaml", Environment: "inputs/environments/github-nvke-services.yaml"},
 		{Definition: "inputs/definitions/nvke/telemetry.yaml", Environment: "inputs/environments/github-nvke-telemetry.yaml"},
@@ -296,6 +297,7 @@ func TestClosureListsTheMaintainedBundles(t *testing.T) {
 		".github/nvkr-run",
 		".github/nvkr-run-nvke-core",
 		".github/nvkr-run-nvke-disks",
+		".github/nvkr-run-nvke-nightly-amd64",
 		".github/nvkr-run-nvke-nightly-arm64",
 		".github/nvkr-run-nvke-nightly-upstream-ovn-arm64",
 		".github/nvkr-run-nvke-services",
@@ -311,6 +313,7 @@ func TestClosureListsTheMaintainedBundles(t *testing.T) {
 		".github/workflows/nvkr-qualify.yml",
 		".github/workflows/nvkr-run-nvke-core.yml",
 		".github/workflows/nvkr-run-nvke-disks.yml",
+		".github/workflows/nvkr-run-nvke-nightly-amd64.yml",
 		".github/workflows/nvkr-run-nvke-nightly-arm64.yml",
 		".github/workflows/nvkr-run-nvke-nightly-upstream-ovn-arm64.yml",
 		".github/workflows/nvkr-run-nvke-services.yml",

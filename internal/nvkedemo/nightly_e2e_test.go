@@ -5,6 +5,7 @@ package nvkedemo
 
 import (
 	"context"
+	_ "embed"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -31,6 +32,27 @@ import (
 	"github.com/google/go-containerregistry/pkg/name"
 	"golang.org/x/sys/unix"
 )
+
+// The repository owns deployment orchestration; the selected NVKE commit owns
+// the unchanged Go tests and their backend/CLI assertion helpers.
+//
+//go:embed nightly-candidate-entrypoint.sh
+var nightlyCandidateEntrypoint []byte
+
+//go:embed nightly-candidate.sh
+var nightlyCandidateLibrary []byte
+
+var nightlySourceFiles = []string{
+	"controller/test/e2e/suite_test.go", "controller/test/e2e/tenant_test.go",
+	"controller/test/e2e/go.mod", "controller/test/e2e/go.sum",
+	"controller/test/e2e/internal/config/config.go",
+	"controller/test/fixtures/fleet-releases/index.yaml",
+	"controller/hack/backend-e2e-lib.sh", "controller/hack/ci/nvkectl-smoke.sh",
+	"controller/hack/controller-capi-kind.yaml", "controller/hack/apply-capi-spiffe-exec-auth.sh",
+	"controller/deploy/k8s/nvke-auth-dev.yaml", "controller/hack/tilt-controller-api-auth-values.yaml",
+	"deploy/nvke-deploy.sh",
+	"deploy/lib/nvke-deploy-items.py", "deploy/lib/render-template.py",
+}
 
 // This is the scheduled workflow's integration test, not a product command.
 // It consumes a completed, authenticated publication and executes NVKE's own
@@ -115,12 +137,22 @@ type nightlyImageInput struct {
 }
 
 func runNightlyPublishedCandidate(ctx context.Context, timing nightlyTiming) (resultErr error) {
-	if runtime.GOOS != "linux" || runtime.GOARCH != "arm64" || os.Getenv("GITHUB_REF") != "refs/heads/main" || os.Getenv("GITHUB_SERVER_URL") != "https://github.com" {
-		return e.New(e.CodeEngineCapability, "nightly runtime requires the protected main GitHub workflow on native Linux ARM64")
+	if runtime.GOOS != "linux" || os.Getenv("GITHUB_REF") != "refs/heads/main" || os.Getenv("GITHUB_SERVER_URL") != "https://github.com" {
+		return e.New(e.CodeEngineCapability, "nightly runtime requires the protected main GitHub workflow on native Linux")
 	}
 	profile, err := loadNightlyProfile(ctx, os.Getenv("NVKR_NIGHTLY_PROFILES"), os.Getenv("NVKR_NIGHTLY_PROFILE"))
 	if err != nil {
 		return err
+	}
+	arch, err := nightlyArchitecture(profile.RuntimeTarget)
+	if err != nil {
+		return err
+	}
+	if err = nightlyNativeHost(runtime.GOOS, runtime.GOARCH, arch); err != nil {
+		return err
+	}
+	if arch == "amd64" && os.Getenv("RUNNER_ENVIRONMENT") != "github-hosted" {
+		return e.New(e.CodeEngineCapability, "AMD64 nightly requires an actual GitHub-hosted runner")
 	}
 	build, err := loadNightlyBuild(ctx, os.Getenv("NVKR_NIGHTLY_BUILD"))
 	if err != nil {
@@ -136,15 +168,12 @@ func runNightlyPublishedCandidate(ctx context.Context, timing nightlyTiming) (re
 	if err = os.Mkdir(public, 0o700); err != nil {
 		return e.Wrap(e.CodeImmutableViolation, err, "creating public nightly reports")
 	}
-	phase, subject, suite := "preparation", "", ""
+	phase, subject := "preparation", ""
 	defer func() {
 		// Registered before publication/network/process owners. Their deferred
 		// cleanup errors reach resultErr before this final verdict is written.
 		cleanup, cancel := timing.cleanupContext(ctx, nightlyReportGrace)
 		defer cancel()
-		if suite != "" {
-			resultErr = errors.Join(resultErr, nightlyPublicDiagnostics(cleanup, suite, public))
-		}
 		if ctx.Err() != nil {
 			resultErr = errors.Join(resultErr, e.Wrap(e.CodeTimeout, ctx.Err(), "nightly cycle canceled before its final verdict"))
 		}
@@ -188,13 +217,9 @@ func runNightlyPublishedCandidate(ctx context.Context, timing nightlyTiming) (re
 		return err
 	}
 	source := os.Getenv("NVKR_NIGHTLY_SOURCE")
-	if !environment.GitHubRuntimePlan {
-		if err = nightlySource(ctx, runner, source, profile.HarnessCommit); err != nil {
-			return err
-		}
-	}
 	// Refuse missing runtime capabilities before fetching large publication data.
-	for _, tool := range []string{"bash", "docker", "virsh", "qemu-img", "qemu-system-aarch64", "cloud-localds", "swtpm", "dnsmasq", "ip", "iptables", "sudo", "setcap", "getcap", "jq", "curl", "timeout", "flock", "setsid", "openssl", "go", "ss", "make", "awk", "df", "sort", "seq"} {
+	qemu := map[string]string{"arm64": "qemu-system-aarch64", "amd64": "qemu-system-x86_64"}[arch]
+	for _, tool := range []string{"bash", "docker", "virsh", "qemu-img", qemu, "cloud-localds", "swtpm", "dnsmasq", "ip", "iptables", "sudo", "setcap", "getcap", "jq", "curl", "timeout", "flock", "setsid", "openssl", "go", "ss", "make", "awk", "df", "sort", "seq", "python3"} {
 		if _, err = commandPath(tool, runner.Env); err != nil {
 			return e.Wrap(e.CodeEngineCapability, err, "admitting nightly host")
 		}
@@ -213,10 +238,8 @@ func runNightlyPublishedCandidate(ctx context.Context, timing nightlyTiming) (re
 	if err != nil {
 		return err
 	}
-	if environment.GitHubRuntimePlan {
-		if err = nightlySource(ctx, runner, source, inputs.HarnessCommit); err != nil {
-			return err
-		}
+	if err = nightlySource(ctx, runner, source, inputs.HarnessCommit); err != nil {
+		return err
 	}
 	consumer, err := lifecycle.NewConsumer(lifecycle.ConsumerOptions{
 		CosignBinary: os.Getenv("NVKR_NIGHTLY_COSIGN"), CosignDigest: os.Getenv("NVKR_NIGHTLY_COSIGN_DIGEST"),
@@ -260,7 +283,7 @@ func runNightlyPublishedCandidate(ctx context.Context, timing nightlyTiming) (re
 	}
 	// Verification credentials never reach a runtime command or simulator.
 	runner.Env = SetEnv(runner.Env, bindings)
-	phase, suite = "runtime", filepath.Join(workspace, "suite")
+	phase = "runtime"
 	runtimeProfile := profile
 	runtimeProfile.HarnessCommit = inputs.HarnessCommit
 	return nightlyRuntime(ctx, timing, runner, source, runtimeProfile, description)
@@ -295,7 +318,7 @@ func nightlySource(ctx context.Context, runner Runner, source, commit string) er
 	if err = sourcegit.CheckWorktreeIndex(ctx, baseline, source, 100000); err != nil {
 		return err
 	}
-	for _, entrypoint := range []string{"controller/hack/ci/nico-vms-candidate.sh", "controller/hack/ci/nico-vms-e2e.sh"} {
+	for _, entrypoint := range nightlySourceFiles {
 		if _, err = boundedRegularRead(filepath.Join(source, entrypoint), diagnosticLimit); err != nil {
 			return e.Wrap(e.CodeVerifyFailed, err, "admitting pinned suite entrypoint %s", entrypoint)
 		}
@@ -303,14 +326,24 @@ func nightlySource(ctx context.Context, runner Runner, source, commit string) er
 	return nil
 }
 
-func nightlyBundle(ctx context.Context, publication *delivery.Publication, work, output string) (map[string]string, error) {
+func nightlyNativeHost(goos, goarch, arch string) error {
+	if goos != "linux" || goarch != arch || (arch != "arm64" && arch != "amd64") {
+		return e.New(e.CodeEngineCapability, "nightly runtime requires native Linux %s, observed %s/%s", arch, goos, goarch)
+	}
+	return nil
+}
+
+func nightlyBundle(ctx context.Context, publication *delivery.Publication, work, output, arch string) (map[string]string, error) {
+	if err := nightlyNativeHost("linux", arch, arch); err != nil {
+		return nil, err
+	}
 	directory := filepath.Join(work, output)
 	bundle, err := publication.ExtractBinaryBundle(ctx, output, directory)
 	if err != nil {
 		return nil, err
 	}
-	if bundle.OS != "linux" || bundle.Arch != "arm64" {
-		return nil, e.New(e.CodeEngineCapability, "nightly requires native ARM64 tools")
+	if err = nightlyNativeHost(bundle.OS, bundle.Arch, arch); err != nil {
+		return nil, err
 	}
 	return nightlyBundleEntries(bundle, directory)
 }
@@ -331,6 +364,14 @@ func nightlyBundleEntries(bundle delivery.BinaryBundle, directory string) (map[s
 }
 
 func nightlyMaterials(ctx context.Context, runner Runner, profile NightlyProfile, plan *factory.Plan, release lifecycle.Release, publication *delivery.Publication, publicationRoot string) (map[string]string, error) {
+	arch, err := nightlyArchitecture(profile.RuntimeTarget)
+	if err != nil {
+		return nil, err
+	}
+	diskOutput, err := nightlyDiskOutput(profile.Network, arch)
+	if err != nil || diskOutput != profile.DiskOutput {
+		return nil, e.New(e.CodeEngineCapability, "nightly disk output differs from its native network selection")
+	}
 	for _, output := range []string{nightlyControllerOutput(profile), profile.ProfilesOutput} {
 		if _, err := nightlyNamedImage(release, output); err != nil {
 			return nil, err
@@ -341,15 +382,15 @@ func nightlyMaterials(ctx context.Context, runner Runner, profile NightlyProfile
 		return nil, err
 	}
 	work := runner.Work
-	cli, err := nightlyBundle(ctx, publication, work, "nvkectl")
+	cli, err := nightlyBundle(ctx, publication, work, "nvkectl", arch)
 	if err != nil {
 		return nil, err
 	}
-	tools, err := nightlyBundle(ctx, publication, work, "installer-tools-arm64")
+	tools, err := nightlyBundle(ctx, publication, work, "installer-tools-"+arch, arch)
 	if err != nil {
 		return nil, err
 	}
-	simulator, err := nightlyBundle(ctx, publication, work, "nicosim-tools-arm64")
+	simulator, err := nightlyBundle(ctx, publication, work, "nicosim-tools-"+arch, arch)
 	if err != nil {
 		return nil, err
 	}
@@ -368,10 +409,14 @@ func nightlyMaterials(ctx context.Context, runner Runner, profile NightlyProfile
 	if err = SafeExtractAssets(ctx, simulator["nicosim-runtime-assets.tar.gz"], assets); err != nil {
 		return nil, err
 	}
-	if _, err = projectSeed(ctx, assets); err != nil {
+	if _, err = projectNightlySeed(ctx, assets); err != nil {
 		return nil, err
 	}
-	disk := filepath.Join(work, "nvke-node-image-arm64.qcow2")
+	diskName := profile.DiskOutput
+	if arch == "arm64" {
+		diskName = DiskOutputName // Preserve the original candidate harness's fixed URL.
+	}
+	disk := filepath.Join(work, diskName+".qcow2")
 	file, err := os.OpenFile(disk, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
 	if err != nil {
 		return nil, err
@@ -386,7 +431,7 @@ func nightlyMaterials(ctx context.Context, runner Runner, profile NightlyProfile
 			continue
 		}
 		archive := filepath.Join(work, artifact.Name+".tar")
-		exported, exportErr := publication.ExportImage(ctx, artifact.Name, artifact.Reference, "linux/arm64", archive)
+		exported, exportErr := publication.ExportImage(ctx, artifact.Name, artifact.Reference, "linux/"+arch, archive)
 		if exportErr != nil {
 			return nil, exportErr
 		}
@@ -396,7 +441,7 @@ func nightlyMaterials(ctx context.Context, runner Runner, profile NightlyProfile
 	if err = privateJSON(imageInputs, images); err != nil {
 		return nil, err
 	}
-	profileDirectory, err := nightlyProfiles(ctx, publication, release, profile.ProfilesOutput, work)
+	profileDirectory, err := nightlyProfiles(ctx, publication, release, profile.ProfilesOutput, work, arch)
 	if err != nil {
 		return nil, err
 	}
@@ -404,7 +449,7 @@ func nightlyMaterials(ctx context.Context, runner Runner, profile NightlyProfile
 	if err = nightlyProfileResources(ctx, profile, release, profileDirectory, releases); err != nil {
 		return nil, err
 	}
-	values, err := nightlyRuntimeValues(plan, release)
+	values, err := nightlyRuntimeValues(plan, release, arch)
 	if err != nil {
 		return nil, err
 	}
@@ -430,6 +475,7 @@ func nightlyMaterials(ctx context.Context, runner Runner, profile NightlyProfile
 		return nil, err
 	}
 	bindings := map[string]string{
+		"NKE_E2E_CANDIDATE_ARCH":    arch,
 		"PATH":                      filepath.Dir(tools["kind"]) + ":" + environmentValue(runner.Env, "PATH"),
 		"NKE_E2E_CANDIDATE_RELEASE": releaseFile, "NKE_E2E_CANDIDATE_LAYOUT": publicationRoot,
 		"NKE_E2E_CANDIDATE_NVKECTL": cli["nvkectl"], "NKE_E2E_CANDIDATE_SIMULATOR": simulator["nico-sim"],
@@ -438,9 +484,17 @@ func nightlyMaterials(ctx context.Context, runner Runner, profile NightlyProfile
 		"NKE_E2E_CANDIDATE_OS_PROFILE": profile.OSProfile, "NKE_E2E_CANDIDATE_KUBERNETES_VERSION": profile.KubernetesVersion,
 		"NKE_E2E_CANDIDATE_CONTROLLER_VERSION": controllerVersion,
 		"NKE_E2E_CANDIDATE_IMAGE_INPUTS":       imageInputs, "NKE_E2E_CANDIDATE_VALUES": valuesDirectory,
-		"NKE_E2E_CANDIDATE_MIN_AVAILABLE_MIB": "24576", "NKE_E2E_CANDIDATE_MIN_DISK_MIB": "92160",
 		"NKE_E2E_LABEL_FILTER": profile.LabelFilter, "NKE_E2E_STATE_DIR": filepath.Join(work, "suite"), "NKE_E2E_KEEP": "",
 		"NICO_VMS_LIBVIRT_URI": "qemu:///session", "NICO_VMS_BRIDGE_NAME": BridgeName, "NKE_CI_HOST_EXTERNAL_DHCP": "true",
+	}
+	if arch == "amd64" {
+		// Observation is deliberate: the source-built experiment does not
+		// establish a minimum for staging the authenticated candidate closure.
+		bindings["NKE_E2E_CANDIDATE_RESOURCE_POLICY"] = "github-hosted-amd64-v1"
+		bindings["RUNNER_ENVIRONMENT"] = os.Getenv("RUNNER_ENVIRONMENT")
+	} else {
+		bindings["NKE_E2E_CANDIDATE_MIN_AVAILABLE_MIB"] = "24576"
+		bindings["NKE_E2E_CANDIDATE_MIN_DISK_MIB"] = "92160"
 	}
 	for _, key := range []string{"NVKECTL", "SIMULATOR", "SEED", "QCOW2"} {
 		digest, digestErr := DigestFile(ctx, bindings["NKE_E2E_CANDIDATE_"+key])
@@ -463,6 +517,7 @@ func writeNightlyCycle(ctx context.Context, public string, profile NightlyProfil
 		"profile": profile.Name, "releaseSubject": subject, "phase": phase,
 		"runtimePassed": phase == "runtime" && resultErr == nil, "qualificationAuthority": "none",
 		"producerRun": build.ProducerRun, "producerAttempt": build.ProducerAttempt, "sourceCommit": build.SourceCommit,
+		"nvkeCommit":     build.NVKECommit,
 		"coordinatorRun": build.CoordinatorRun, "coordinatorAttempt": build.CoordinatorAttempt,
 	}); err != nil {
 		return e.Wrap(e.CodeImmutableViolation, err, "writing private nightly cycle report")
@@ -472,7 +527,10 @@ func writeNightlyCycle(ctx context.Context, public string, profile NightlyProfil
 
 // The publication owner reads and verifies the held native image, applies
 // upstream whiteout semantics and admits bounded regular profile files.
-func nightlyProfiles(ctx context.Context, publication *delivery.Publication, release lifecycle.Release, output, work string) (string, error) {
+func nightlyProfiles(ctx context.Context, publication *delivery.Publication, release lifecycle.Release, output, work, arch string) (string, error) {
+	if err := nightlyNativeHost("linux", arch, arch); err != nil {
+		return "", err
+	}
 	if _, err := nightlyNamedImage(release, output); err != nil {
 		return "", err
 	}
@@ -480,7 +538,7 @@ func nightlyProfiles(ctx context.Context, publication *delivery.Publication, rel
 	if err := os.Mkdir(destination, 0o700); err != nil {
 		return "", e.Wrap(e.CodeImmutableViolation, err, "creating private profiles destination")
 	}
-	if err := publication.ExtractImageFiles(ctx, output, "linux/arm64", []string{"profiles"}, destination); err != nil {
+	if err := publication.ExtractImageFiles(ctx, output, "linux/"+arch, []string{"profiles"}, destination); err != nil {
 		return "", err
 	}
 	if _, err := boundedRegularRead(filepath.Join(destination, "profiles/osProfiles/metadata.yaml"), diagnosticLimit); err != nil {
@@ -489,13 +547,19 @@ func nightlyProfiles(ctx context.Context, publication *delivery.Publication, rel
 	return destination, nil
 }
 
-func nightlyRuntimeValues(plan *factory.Plan, release lifecycle.Release) (map[string]any, error) {
+func nightlyRuntimeValues(plan *factory.Plan, release lifecycle.Release, arch string) (map[string]any, error) {
+	if err := nightlyNativeHost("linux", arch, arch); err != nil {
+		return nil, err
+	}
 	outputs := make(map[string]SelectedOutput)
 	references := make(map[string]name.Digest)
 	for _, key := range runtimeImages {
 		for _, artifact := range release.Artifacts {
-			if artifact.Name != key+"-image-arm64" || artifact.Kind != lifecycle.OutputOCI {
+			if artifact.Name != key+"-image-"+arch || artifact.Kind != lifecycle.OutputOCI {
 				continue
+			}
+			if err := nightlyNativeHost(artifact.OS, artifact.Arch, arch); err != nil {
+				return nil, err
 			}
 			if _, duplicate := references[key]; duplicate {
 				return nil, e.New(e.CodeVerifyFailed, "runtime role has duplicated outputs: %s", key)
@@ -634,7 +698,7 @@ func nightlyRuntime(ctx context.Context, timing nightlyTiming, runner Runner, so
 	if err = verifyHTTPDisk(ctx, service.url, image); err != nil {
 		return err
 	}
-	if profile.DiskOutput != DiskOutputName {
+	if profile.DiskOutput+".qcow2" != filepath.Base(disk) {
 		profileURL := strings.TrimSuffix(service.url, "/"+filepath.Base(disk)) + "/" + profile.DiskOutput + ".qcow2"
 		if err = verifyHTTPDisk(ctx, profileURL, image); err != nil {
 			return err
@@ -658,7 +722,14 @@ func nightlyRuntime(ctx context.Context, timing nightlyTiming, runner Runner, so
 	command.Env = runner.Env
 	command.Dir = source
 	command.ExtraFiles = []*os.File{nil, nil, nil, nil, nil, nil, lock} // inherited FD9 holds the same lease
-	command.Stdout, command.Stderr = os.Stdout, os.Stderr
+	// Product output, including failed assertions, stays in the private attempt.
+	// The only public attachment is the parent-authored cycle.json verdict.
+	output, err := os.OpenFile(filepath.Join(runner.Work, "nightly-adapter.log"), os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
+	if err != nil {
+		return e.Wrap(e.CodeImmutableViolation, err, "creating private nightly adapter log")
+	}
+	defer func() { resultErr = errors.Join(resultErr, output.Close()) }()
+	command.Stdout, command.Stderr = output, output
 	if err = ownedcmd.ConfigureCancellation(command, nightlySuiteGrace); err != nil {
 		return err
 	}
@@ -732,11 +803,28 @@ func nightlySuiteCommand(ctx context.Context, runner Runner, source string) (*ex
 	if err != nil {
 		return nil, e.Wrap(e.CodeEngineCapability, err, "admitting nightly suite interpreter")
 	}
-	entrypoint := filepath.Join(source, "controller/hack/ci/nico-vms-e2e.sh")
-	if _, err := boundedRegularRead(entrypoint, diagnosticLimit); err != nil {
-		return nil, e.Wrap(e.CodeVerifyFailed, err, "admitting nightly suite entrypoint")
+	for _, path := range nightlySourceFiles {
+		if _, err := boundedRegularRead(filepath.Join(source, path), diagnosticLimit); err != nil {
+			return nil, e.Wrap(e.CodeVerifyFailed, err, "admitting local NVKE Go suite input %s", path)
+		}
 	}
-	command := exec.CommandContext(ctx, bash, entrypoint)
+	if !filepath.IsAbs(runner.Work) || !filepath.IsAbs(source) || runner.Work == source || insidePath(source, runner.Work) || insidePath(runner.Work, source) {
+		return nil, e.New(e.CodeUsage, "nightly adapter requires a private workspace separate from the selected NVKE checkout")
+	}
+	directory := filepath.Join(runner.Work, "nightly-adapter")
+	if err := os.Mkdir(directory, 0o700); err != nil {
+		return nil, e.Wrap(e.CodeImmutableViolation, err, "creating private NVKR nightly adapter")
+	}
+	entrypoint, library := filepath.Join(directory, "entrypoint.sh"), filepath.Join(directory, "candidate.sh")
+	for _, file := range []struct {
+		path string
+		raw  []byte
+	}{{entrypoint, nightlyCandidateEntrypoint}, {library, nightlyCandidateLibrary}} {
+		if err := privateWrite(file.path, file.raw); err != nil {
+			return nil, e.Wrap(e.CodeImmutableViolation, err, "writing private NVKR nightly adapter")
+		}
+	}
+	command := exec.CommandContext(ctx, bash, entrypoint, source, library)
 	command.Env, command.Dir = runner.Env, source
 	return command, nil
 }
@@ -754,33 +842,6 @@ func nightlyPreparationEnvironment(native []string, binding map[string]string, w
 		"GOTOOLCHAIN": "local", "GOENV": "off", "GOWORK": "off", "GOFLAGS": "-mod=readonly",
 		"GOCACHE": filepath.Join(work, "go-cache"), "GOMODCACHE": filepath.Join(work, "go-modules"), "GOPATH": filepath.Join(work, "go-path"),
 	}), nil
-}
-
-func nightlyPublicDiagnostics(ctx context.Context, suite, public string) error {
-	marker, info, err := securepath.OpenRegular(filepath.Join(suite, "SAFE_TO_UPLOAD"))
-	if os.IsNotExist(err) {
-		return nil
-	}
-	if err != nil {
-		return e.Wrap(e.CodeVerifyFailed, err, "diagnostic marker is not a regular file")
-	}
-	defer marker.Close()
-	if !currentOwner(info) || info.Mode().Perm() != 0o600 || info.Size() != 0 {
-		return e.New(e.CodeVerifyFailed, "diagnostic marker is not an empty private owned file")
-	}
-	for _, name := range []string{"junit.xml", "candidate-outcome.json"} {
-		raw, err := readRunFile(ctx, suite, name, diagnosticLimit)
-		if os.IsNotExist(err) {
-			continue
-		}
-		if err != nil {
-			return e.Wrap(e.CodeVerifyFailed, err, "reading allowlisted nightly report")
-		}
-		if err := privateWrite(filepath.Join(public, name), raw); err != nil {
-			return e.Wrap(e.CodeImmutableViolation, err, "writing allowlisted nightly report")
-		}
-	}
-	return nil
 }
 
 func nightlyCandidateVerdict(raw []byte, profile NightlyProfile) (bool, error) {
