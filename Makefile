@@ -236,10 +236,6 @@ workflows-check: workflow-generator pipeline-dev-check nvke-split-check catalog-
 		--definition "$$definition" --environment "$$environment" \
 		--qualification-policy inputs/policies/nvke-qualification.yaml --root . --check
 	bin/nvkr-exec run generate --engine github \
-		--definition inputs/definitions/demo/amd64-nvidia-kvm.json \
-		--environment inputs/environments/github-nightly-nvidia-amd64.json \
-		--root . --runtime --check
-	bin/nvkr-exec run generate --engine github \
 		--definition inputs/definitions/demo/arm64-nvidia-kvm.json \
 		--environment inputs/environments/github-nightly-nvidia.json \
 		--root . --runtime --check
@@ -276,10 +272,6 @@ workflows-generate: workflow-generator pipeline-dev-generate nvke-split-generate
 	 bin/nvkr-exec run generate --engine github \
 		--definition "$$definition" --environment "$$environment" \
 		--qualification-policy inputs/policies/nvke-qualification.yaml \
-		--root .
-	bin/nvkr-exec run generate --engine github \
-		--definition inputs/definitions/demo/amd64-nvidia-kvm.json \
-		--environment inputs/environments/github-nightly-nvidia-amd64.json \
 		--root .
 	bin/nvkr-exec run generate --engine github \
 		--definition inputs/definitions/demo/arm64-nvidia-kvm.json \

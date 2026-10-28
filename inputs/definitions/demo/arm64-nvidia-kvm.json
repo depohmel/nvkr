@@ -6,31 +6,9 @@
   "kind": "Definition",
   "metadata": {
     "name": "nvke-nightly-arm64",
-    "description": "Pipeline-attested ARM64 nightly candidate with NVIDIA OVN, native KVM node-image production and authenticated inputs for the NVKR Go site-bootstrap smoke test. Runtime and cleanup require a completed external cycle."
+    "description": "Pipeline-attested ARM64 nightly candidate selecting the complete 29-output local-demo artifact set with NVIDIA-fork OVN, source-built components and explicitly acquired inputs plus the mixed SPIRE-source exception. Required-KVM disk production uses build-provenance-v1; no qualified, runtime compatibility, FIPS/STIG or hardware acceptance claim."
   },
   "outputs": [
-    {
-      "catalog": {
-        "base": "../../catalogs/tools/nightly-bootstrap-arm64"
-      },
-      "components": [
-        "native-capi-exec-init-image"
-      ],
-      "format": "oci",
-      "name": "capi-exec-init-image-arm64",
-      "platform": "linux/arm64"
-    },
-    {
-      "catalog": {
-        "base": "../../catalogs/tools/nightly-bootstrap-arm64"
-      },
-      "components": [
-        "native-capi-exec-plugin-image"
-      ],
-      "format": "oci",
-      "name": "capi-exec-plugin-image-arm64",
-      "platform": "linux/arm64"
-    },
     {
       "catalog": {
         "base": "../../catalogs/capnico/local-arm64"
@@ -100,17 +78,6 @@
       ],
       "format": "oci",
       "name": "cwe",
-      "platform": "linux/arm64"
-    },
-    {
-      "catalog": {
-        "base": "../../catalogs/tools/nightly-bootstrap-arm64"
-      },
-      "components": [
-        "nvke-installer-sources"
-      ],
-      "format": "executable",
-      "name": "installer-sources-arm64",
       "platform": "linux/arm64"
     },
     {
@@ -255,18 +222,6 @@
     },
     {
       "catalog": {
-        "base": "../../catalogs/tools/nightly-bootstrap-arm64"
-      },
-      "components": [
-        "nerdctl",
-        "nvkr-site-identity-helper"
-      ],
-      "format": "executable",
-      "name": "site-startup-tools-arm64",
-      "platform": "linux/arm64"
-    },
-    {
-      "catalog": {
         "base": "../../catalogs/runtime-dependencies"
       },
       "components": [
@@ -406,17 +361,6 @@
       ],
       "format": "oci",
       "name": "temporal-ui-image-arm64",
-      "platform": "linux/arm64"
-    },
-    {
-      "catalog": {
-        "base": "../../catalogs/tools/nightly-bootstrap-arm64"
-      },
-      "components": [
-        "native-workload-image"
-      ],
-      "format": "oci",
-      "name": "workload-image-arm64",
       "platform": "linux/arm64"
     }
   ],

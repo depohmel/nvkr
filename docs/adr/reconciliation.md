@@ -1943,10 +1943,9 @@ unreviewed renames, unsafe metadata, exact path/version
 checks and unchanged external selections; they do not establish installation or fresh runtime acceptance.
 The native runtime-image variant
 keeps its separately authenticated images and binds their selection to the same NVKE
-source. Mac and Linux local tools share the same NVKE source pins. Maintained release
-and local native-demo selections retain this reviewed baseline. The separate nightly
-now resolves NVKE main once for both product and installer source, without an
-independent test-harness exception. Selection grants
+source. Mac and Linux tools share the same NVKE source pins. Maintained release,
+native demo and nightly product-build selections use this release; the independently
+pinned nightly test harnesses retain their separate source exception. Selection grants
 no Release authority; prior failed Runs remain failed.
 
 The private Ubuntu attempt `ubuntu-9905-e2e-02` used consumer
@@ -2960,53 +2959,6 @@ or verification's later registry-fetched disk snapshot. No hosted rerun has exer
 and it establishes neither a measured hosted storage envelope nor independent FDE consumption.
 
 ## Native ARC disk route
-
-The separate `githubHostedKVM: native-amd64-v1` generator policy prepares an AMD64 disk
-route on the exact generic `ubuntu-24.04` label with the existing main-only `nvkr-release` deployment
-Environment. It rejects mixed ARC/development selection, unrecognized runner aliases,
-foreign architectures and self-hosted or absent provider context before checkout or input
-transfer. A disk-stage resource preflight rejects insufficient host CPU, available memory
-and filesystem headroom before private carrier downloads; the owning helper retains its
-cgroup-aware capacity, held-workspace and KVM API admission before producer work. The
-class envelope is a configured admission limit, not a measured workload minimum or a claim that a
-standard runner supplies it. The existing ARC routes are unchanged. Contract coverage does not establish a full hosted
-nightly: deployment policy, private storage access and an externally completed build and E2E
-cycle remain outstanding. Resource-gate refusal without attempting either workload does not prove
-the standard runner is insufficient. Build and E2E resource consumption need separate measurements;
-if those establish a need for a larger runner, its provider mapping requires review. No arbitrary
-larger label or currently provisioned larger hosted runner is inferred.
-
-The AMD64 nightly selects this route for its complete 34-output producer and uses
-the same generic hosted label for authenticated candidate consumption. The ARM64
-route retains its ARC runner and default native guest sizing. AMD64 disk admission selects
-4 CPUs, 10 GiB memory and 64 GiB scratch through its exact overlay and matching
-Environment; these are authored limits, not empirically established minima. Its
-NVKR-owned native runtime uses an explicit four-vCPU, 4 GiB site/tenant guest
-shape with 1 GiB host/QEMU headroom, including the larger bootstrap or tenant
-phase in admission. This is a configured trial budget, not a measured minimum.
-Both runtime architectures invoke the existing native Go site lifecycle using
-authenticated artifacts and installer source from the same frozen NVKE main
-commit. There is no separate NVKE PR or test-source revision dependency.
-Native KVM, publication authentication and owned cleanup remain required.
-
-[Source-built workload Run 40578231640](https://github.com/depohmel/nvkr/actions/runs/40578231640)
-completed QCOW2 assembly/validation and kind plus KVM Go E2E on `ubuntu-24.04`:
-11 specs passed, zero failed, one selected multi-CIDR spec skipped, with the remaining
-280 excluded by labels. Cluster deletion passed and best-effort host teardown ran.
-The complete job lasted 60 minutes 52 seconds and uploaded no Actions artifacts.
-Fifteen-second samples reached 1,506 MiB available RAM, 2,982/3,071 MiB used swap and
-373 MiB free disk. These observations show a successful experiment near capacity,
-not a measured minimum or independent cleanup proof. It used a same-job source-built
-disk and the nightly guest shape; it did not execute the authenticated candidate
-adapter or establish a completed NVKR publication-to-runtime nightly.
-
-The [2026-10-28 producer](https://github.com/dsx-ai-factory/nvkr/actions/runs/40626831828)
-still failed publication privacy admission. The existing internal
-`nvkr/nightly/nvke-nightly-arm64/releases-temporal` package was linked to the public
-source repository when inspected; the policy requires unlinked private/internal
-packages. The CI transfer package itself was internal and unlinked. No privacy gate
-is weakened or package ACL changed by the hosted AMD64 integration.
-
 The single checked-in `nvkr-run.yml` selects the 69-output M2 Definition and its main-only publication
 Environment, including plain and public-bootstrap FDE disks on both native architectures. The Makefile drift
 gate repeats the exact Definition and Environment paths recorded in the committed Plan. Dispatch does not
@@ -3360,132 +3312,40 @@ extraction and image export retain delivery ownership. The downstream harness
 uses the held publication directly rather than adding another command interface.
 
 The standalone input-staging command and compile-only adapter are removed.
-The [NVKE nightly coordinator](../nvke-nightly.md) instead declares scheduled and
-manual GitHub execution: complete project producer, exact run correlation,
-authenticated publication handoff, direct native Go smoke against a real KVM
-site-controller VM, and joined resource cleanup. Temporary kind/Lima bootstrap
-is stopped before optional tenant provisioning. This is downstream repository
-CI infrastructure outside the NVKR product lifecycle and v1 acceptance. ADR-16
-retains the passive external-conformance boundary; ADR-18 §3 records the adapter's
-native runner and trust limits, not a new product runtime engine or ratified decision.
-Named generated bundles isolate these project producers from the retained M2
-workflow and manifests.
+The [NVKE nightly workflow](../nvke-nightly.md) now resolves one exact NVKE main
+commit and uses two local build/test matrix jobs: AMD64 on `ubuntu-24.04` and
+ARM64 on `arc-arm64-kvm`. It invokes NVKR's existing `TestEndToEnd` Go integration
+through `BuildArtifacts` and `WithNativeSite`, with the source-built NVKE CLI and
+simulator performing bootstrap/installation. Default coverage is the live site
+API and Ready node plus joined cleanup; tenant workload/DNS checks are manual
+opt-ins. This changes downstream repository CI, not qualified release acceptance.
 
-Named-bundle contract tests in `pkg/nvkr/factory/github_bundle_test.go` and
-`pkg/nvkr/definition/github_bundle_test.go` cover default behavior, coexistence,
-independent drift/retirement, cross-namespace refusal, exact utility Plan paths
-and name admission before catalog resolution. Named producers use the disjoint
-`nvkr-project-<bundle>` display-name namespace. Same-Definition contracts cover
-distinct workflow/concurrency names, display-name validation and exclusion from
-the default qualifier's `workflow_run` selection; default/development display names
-and all workflow paths are preserved. Those contracts do not prove hosted
-execution, complete crash recovery or acceptance of scheduled downstream tests.
+The nightly appends catalog-owned exact-source overlays to private attempt inputs
+and executes an ordinary captured local Run. Existing overlay predecessors and
+external acquisition pins retain their owners. Shared native catalogs support
+both architectures; the retained release catalogs are unchanged. One reviewed
+main-specific CAPI init-image acquisition remains distinct from the tagged demo,
+and the source-owned installer continues rejecting mismatched image parents.
+The new parallel AMD64 publication bundle and publication-to-native adapter are
+removed. Retained manually dispatched producer bundles have independent owners;
+the local nightly neither dispatches them nor publishes product artifacts.
 
-NVKE's source-built CLI and simulator perform installation and guest operations.
-NVKR's existing native Go owners drive deployment, assertions, host admission,
-serialization, the disk service and journaled network-control restoration.
-Successful cycles require joined guest, backend and host cleanup;
-missing cleanup evidence retains private recovery controls. NVKE runs as fully
-trusted pinned code with sudo and Docker access under the parent's UID, including
-root-equivalent access to its read-only job token. Environment scrubbing is not
-an independent sandbox, and self-written verdicts are unsigned diagnostics.
+Both local Definitions compile with their matching native Environments. Focused
+contracts cover architecture-bound artifact extraction, source/installer
+agreement, independent acquisition lineage, actual Git source freezing, stale
+predecessor rejection and ordinary captured-input replay after relocation.
+The workflow has no Actions artifact uploads, shared caches, registry writers or
+OIDC signing permission. Its independent registry reader is used only for bounded
+private toolchain pulls and removed before candidate execution. Every job has an
+explicit timeout; the Go test reserves two hours for joined cleanup inside the
+outer deadline. These contracts do not establish a completed hosted matrix cycle.
+The complete current nightly build/bootstrap/cleanup cycle remains unverified.
 
-The maintained nightly profiles select native AMD64 and ARM64 KVM guests and NVIDIA-fork
-OVN. Scheduled and manual `all` selection exclude upstream OVN; its generated
-producer remains available for separate manual diagnostics. Selection validates
-these capabilities and the frozen same-source test revision;
-there is no caller-supplied security approval marker. ADR-13 keeps artifact vulnerability
-scanning and clearance outside v1; the existing repository vulnerability gate is unchanged.
-The chart sources replace the local-only image ID with the existing registry-addressable
-Go toolchain and checksum-pinned Helm 4.1.4 acquisition. Vendoring captures the executable
-and pinned dependency archives; packaging consumes the held source closure offline.
-Installer Helm 4.2.4, operator Helm 4.1.4 and independent Cosign 3.1.3 retain explicit
-checksum bindings. Acquisition integrity does not grant vulnerability clearance.
-The generated nightly source-fetch and native disk jobs prepare their selected private
-M2 toolchains through the existing read-only image-preparation owner. Temporary pull
-credentials are removed before source or producer execution; the nightly output
-namespace does not require republishing the existing pinned toolchains.
-The nightly coordinator resolves NVKE `main` once, records `nvkeCommit` separately
-from the NVKR workflow commit and passes it to each generated producer. The
-opted-in producer authenticates that exact Git tree through the catalog owner,
-then freezes the source identity and version stamps for every source-built NVKE
-component, including complete disk-overlay replacements, OS materials, profiles
-and simulator. External dependency and acquisition pins retain the reviewed
-baseline. The runtime Plan records the same commit; finalization recompiles the
-selection, and the runtime consumer rejects mixed-source builds before launching
-the native Go lifecycle with that commit's authenticated installer and tools.
-The committed v0.22.0 locks remain a baseline
-and are not nightly source selection or mutated by the coordinator.
-The nightly consumer exports the held publication through existing delivery and
-native asset owners. Its site VM runs the same bootstrap and smoke path as the
-opt-in local Go test: live API `/readyz` and exactly one identified Ready node.
-Default nightly coverage is site smoke and cleanup; explicit `tenant_checks`
-selects `NVKR_NIGHTLY_TENANT=1` for real tenant nodes, per-node cloud-init,
-selected-image workload/DNS and exact KVM/TPM/CPU/backing-image observations.
-Conformance remains a longer local opt-in, not the scheduled default. The local
-ARM64 `TestEndToEnd` builds fresh artifacts from its reviewed baseline; nightly
-instead consumes the authenticated same-main publication. These paths share
-native deployment and smoke owners, not an independently authored runtime.
-AMD64 configures four vCPUs, a 4 GiB site VM, 4 GiB tenant VMs and 1 GiB headroom;
-ARM64 defaults remain unchanged. Resource values reach both seed rows,
-simulator parameters, host admission and Linux VM observations. Linux requires
-the exact Lima `f47461e` installation and checksum-bound native Ubuntu/nerdctl
-materials; AMD64 provisions the pinned upstream source and ARM64 requires a
-matched installation. Focused architecture, resource, source-tag readback,
-cloud-init, workload and cleanup contracts passed locally; no complete new
-publication-to-native-runtime cycle is recorded here.
-The current 34-output AMD64 and ARM64 Plans were separately compiled and exactly
-rechecked with every source-built NVKE component frozen to
-`ad7450e74425e3643caa6dce1edb3203935c29e3`. A Linux source-only contract also
-executed both actual installer-archive producer commands from that Git revision,
-then passed the existing bounded extraction, source-selected Kubernetes/CAPI
-version and four CAPI image-overlay checks. It found and corrected the new
-nightly catalogs' CAPI init-image acquisition to the exact source-selected
-Alpine parent. Independent workload-image acquisition pins remain unchanged.
-These checks published no products and booted no VM.
-An earlier test-only suite pin, `b4f90e2c4fc4ed3d07efc18a22066a7e0b9b99c8`,
-used beta.6 deployment templates and an explicit stack-config/credential/telemetry
-handoff. It is no longer the maintained nightly test selection. Its
-[hosted source-contract Run](https://github.com/dsx-ai-factory/nvkr/actions/runs/39487106857/attempts/1)
-on NVKR `8df540b83aeaec5e27b865dcd65887882699755b` passed the actual
-candidate render function with the beta.6 CLI and the hook argv/environment
-regression. This source-contract-only dispatch skipped the ordinary selection,
-build, runtime selection and runtime-test jobs. The later workflow selector correction
-is covered separately by the shell-versus-Go parity test in the successful
-[Merge Gate on `caf85b27`](https://github.com/dsx-ai-factory/nvkr/actions/runs/39487820535).
-This verifies configuration composition, not published-artifact or VM
-runtime acceptance; full runtime validation of the current selection remains unverified.
-The current native adapter does not compile NVKE's separate controller E2E
-suite or use the prior kind-management candidate shell lane. It does not modify
-NVKE source, rebuild published product components during testing or download an
-OS tag as a fallback. A completed publication-to-native-runtime run remains
-required; the earlier configuration-only result does not exercise it.
-Earlier adapter checks against NVKE `ad7450e74425e3643caa6dce1edb3203935c29e3`
-compiled its CLI and unchanged Go E2E suite, selected 12 OVN/health specs in a dry
-run, and passed the actual site-spec/render handoff, stock chart authentication
-configuration and authenticated-seed projection contract. Both complete
-29-output NVIDIA Plans froze every selected NVKE source component at that commit
-and passed exact runtime-source generation rechecks in scratch roots. Those Plan
-checks built and published no products; the suite dry run provisioned no guests.
-These source and adapter checks do not establish overall interface adoption or runtime acceptance.
-ADR-23 remains proposed and does not authorize this adapter's schedule, runner or
-credential policy; broader acceptance remains open.
-The authored daily trigger is
-retained at the user's explicit request and will execute after merge even though
-no combined manual cycle is recorded here.
-Existing ARC disk production and NVKE's kind plus ARM64 VM lane have completed
-externally, as linked in the nightly guide. The new job retains host/network preflight
-and publication verification. The
-[first scheduled coordinator](https://github.com/dsx-ai-factory/nvkr/actions/runs/38676875690)
-started on `b77229c2cc7bedfc422af506c1cdfbbb655aba48` at
-2026-10-15 03:33:24 UTC. Both producer workflows failed and runtime tests were skipped.
-The NVIDIA-fork producer lacked its exact private OVN source-access binding;
-the corrected Environment passes the existing token only to the selected fetches,
-with private/public OVN rendering regression coverage. The upstream producer
-sent the NICoSim asset archive to the Helm reader and separately failed disk KVM
-admission. The operator reported a subsequent runner repair, without a recorded
-combined rerun here. No successful publication-to-runtime cycle, runtime cleanup
-verdict or external acceptance of the downstream nightly adapter is claimed.
+NVKE code is trusted with sudo and Docker access under the runner UID. Private
+paths and environment scrubbing provide no independent sandbox, and test results
+remain unsigned diagnostics. Existing ADR-16 conformance and generated producer
+identity/result contracts are unchanged. The daily 03:17 UTC trigger is retained
+at the user's explicit request.
 
 The archive correction selects source-built tarball assets in executable bundles
 through exact resolved-component and producer/output membership. Helm and disk

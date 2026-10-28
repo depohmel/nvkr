@@ -17,8 +17,6 @@ developmentEnvironment: inputs/environments/github-development.yaml
 qualificationPolicy: inputs/policies/nvke-qualification.yaml
 developmentQualificationPolicy: inputs/policies/nvke-development-qualification.yaml
 additionalRuns:
-  - definition: inputs/definitions/demo/amd64-nvidia-kvm.json
-    environment: inputs/environments/github-nightly-nvidia-amd64.json
   - definition: inputs/definitions/nvke/core.yaml
     environment: inputs/environments/github-nvke-core.yaml
   - definition: inputs/definitions/nvke/services.yaml

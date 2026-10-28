@@ -655,9 +655,6 @@ func admitLocalPlanBase(ctx context.Context, plan *Plan) error {
 	if len(plan.Environment.GitHubRunners) > 0 {
 		return e.New(e.CodeEngineCapability, "local execution does not support Environment.githubRunners")
 	}
-	if plan.Environment.GitHubHostedKVM != "" {
-		return e.New(e.CodeEngineCapability, "local execution does not support Environment.githubHostedKVM")
-	}
 	if plan.Environment.GitHubDevelopment {
 		return e.New(e.CodeEngineCapability, "local execution does not support Environment.githubDevelopment")
 	}

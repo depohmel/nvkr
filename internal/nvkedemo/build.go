@@ -68,8 +68,8 @@ func buildArtifacts(ctx context.Context, cfg BuildConfig) (BuiltInputs, error) {
 	if err := validateSelectedBuild(cfg.Definition, cfg.Environment, cfg.NVKR, cfg.Prepared || cfg.QualifyLocal || cfg.QualificationPolicy != ""); err != nil {
 		return BuiltInputs{}, err
 	}
-	if runtime.GOARCH != "arm64" || runtime.GOOS != "linux" && runtime.GOOS != "darwin" {
-		return BuiltInputs{}, nvkrerr.New(nvkrerr.CodeEngineCapability, "artifact builds require native Mac or Linux ARM64")
+	if err := admitNativeBuildHost(runtime.GOOS+"/"+runtime.GOARCH, cfg.Definition != ""); err != nil {
+		return BuiltInputs{}, err
 	}
 	repo, err := resolveExisting(cfg.Repository)
 	if err != nil {
@@ -105,6 +105,17 @@ func buildArtifacts(ctx context.Context, cfg BuildConfig) (BuiltInputs, error) {
 		}
 	} else if err := resolveSelectedBuild(ctx, repo, &cfg); err != nil {
 		return BuiltInputs{}, err
+	}
+	combinedTools := false
+	if cfg.Definition != "" {
+		cfg.Repository = repo
+		combinedTools, err = selectedBuildIncludesNativeTools(ctx, cfg, runtime.GOOS+"/"+runtime.GOARCH)
+		if err != nil {
+			return BuiltInputs{}, err
+		}
+		if runtime.GOARCH == "amd64" && !combinedTools {
+			return BuiltInputs{}, nvkrerr.New(nvkrerr.CodeEngineCapability, "explicit Linux AMD64 build requires the complete native host and site tool outputs in its selected Definition")
+		}
 	}
 	env, err := localBuildEnvironment(ctx)
 	if err != nil {
@@ -159,6 +170,12 @@ func buildArtifacts(ctx context.Context, cfg BuildConfig) (BuiltInputs, error) {
 	if err != nil {
 		return BuiltInputs{}, err
 	}
+	if combinedTools {
+		// The explicit Definition already built these named outputs. Their
+		// consumers authenticate the completed Run before extracting them.
+		built.Runs.Tools = built.Runs.OS
+		return built, nil
+	}
 	toolsRun, err := buildTools(ctx, ToolConfig{
 		Repository: repo, NVKR: built.NVKR, NVKEClone: cfg.NVKEClone, Attempt: cfg.AttemptPrefix, Jobs: cfg.Jobs,
 		Out:      filepath.Join(repo, ".nvkr", "laptop-bootstrap", cfg.AttemptPrefix, "native-tools"),
@@ -169,6 +186,18 @@ func buildArtifacts(ctx context.Context, cfg BuildConfig) (BuiltInputs, error) {
 	}
 	built.Runs.Tools = toolsRun
 	return built, nil
+}
+
+func admitNativeBuildHost(platform string, explicit bool) error {
+	switch platform {
+	case "darwin/arm64", "linux/arm64":
+		return nil
+	case "linux/amd64":
+		if explicit {
+			return nil
+		}
+	}
+	return nvkrerr.New(nvkrerr.CodeEngineCapability, "artifact builds require native Mac/Linux ARM64 or explicitly selected Linux AMD64 inputs")
 }
 
 // The private seam joins admitted operations without replacing their authority

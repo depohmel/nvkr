@@ -53,7 +53,6 @@ type NativeAssets struct {
 	identity                               *nativeIdentityAssets
 	arch                                   string
 	importTags                             map[string]string
-	publishedOutputs                       map[string]lifecycle.Artifact
 }
 
 type NativeImageAsset struct {
@@ -63,6 +62,7 @@ type NativeImageAsset struct {
 type nativeImageSelection struct {
 	role, root, output, reference string
 	observed                      lifecycle.Artifact
+	platform                      string
 }
 
 // These are stable consumer roles; the completed Run owns their source images.
@@ -81,6 +81,13 @@ func PrepareNativeAssets(ctx context.Context, cfg NativeAssetConfig) (assets Nat
 	if err := requireContext(ctx); err != nil {
 		return assets, err
 	}
+	platform := runtime.GOOS + "/" + runtime.GOARCH
+	_, _, hostBundle, _, err := nativeToolSelection(platform)
+	if err != nil {
+		return assets, err
+	}
+	arch, guestPlatform := runtime.GOARCH, "linux/"+runtime.GOARCH
+	siteBundle := "site-startup-tools-" + arch
 	// Resolve descriptions against the caller's directory once. Runner changes
 	// directory to the private output workspace; keep the original paths for
 	// both admission and later CLI invocations without resolving symlinks.
@@ -102,6 +109,7 @@ func PrepareNativeAssets(ctx context.Context, cfg NativeAssetConfig) (assets Nat
 	if err != nil {
 		return assets, err
 	}
+	ovnOutput = strings.TrimSuffix(ovnOutput, "arm64") + arch
 	profilesOutput, err := selectedProfilesOutput(cfg.Network)
 	if err != nil {
 		return assets, err
@@ -114,25 +122,20 @@ func PrepareNativeAssets(ctx context.Context, cfg NativeAssetConfig) (assets Nat
 		providersRun = cfg.ProvidersRun
 	}
 	selections := []nativeImageSelection{
-		{"ovn", cfg.DeploymentRun, ovnOutput, "", lifecycle.Artifact{}},
-		{"capnico", providersRun, "capnico-controller-arm64", "", lifecycle.Artifact{}},
-		{"controller", controllerRun, "cwe", "docker.io/library/nke-controller:latest", lifecycle.Artifact{}},
-		{"profiles", cfg.DeploymentRun, profilesOutput, "docker.io/library/cwe-profiles:local", lifecycle.Artifact{}},
-		{"provisioned-provider", cfg.BootstrapRun, "cluster-api-provider-provisioned-arm64", "docker.io/library/cluster-api-provider-provisioned:latest", lifecycle.Artifact{}},
+		{"ovn", cfg.DeploymentRun, ovnOutput, "", lifecycle.Artifact{}, guestPlatform},
+		{"capnico", providersRun, "capnico-controller-" + arch, "", lifecycle.Artifact{}, guestPlatform},
+		{"controller", controllerRun, "cwe", "docker.io/library/nke-controller:latest", lifecycle.Artifact{}, guestPlatform},
+		{"profiles", cfg.DeploymentRun, profilesOutput, "docker.io/library/cwe-profiles:local", lifecycle.Artifact{}, guestPlatform},
+		{"provisioned-provider", cfg.BootstrapRun, "cluster-api-provider-provisioned-" + arch, "docker.io/library/cluster-api-provider-provisioned:latest", lifecycle.Artifact{}, guestPlatform},
 	}
 	if cfg.RuntimeRun != "" {
 		for _, role := range runtimeImages {
-			selections = append(selections, nativeImageSelection{role: "runtime-" + role, root: cfg.RuntimeRun, output: role + "-image-arm64"})
+			selections = append(selections, nativeImageSelection{role: "runtime-" + role, root: cfg.RuntimeRun, output: role + "-image-" + arch, platform: guestPlatform})
 		}
-		selections = append(selections, nativeImageSelection{role: "workload", root: cfg.RuntimeRun, output: "workload-image-arm64"})
+		selections = append(selections, nativeImageSelection{role: "workload", root: cfg.RuntimeRun, output: "workload-image-" + arch, platform: guestPlatform})
 		for _, image := range nativeCAPIAuthImages {
-			selections = append(selections, nativeImageSelection{role: image, root: cfg.RuntimeRun, output: image + "-image-arm64"})
+			selections = append(selections, nativeImageSelection{role: image, root: cfg.RuntimeRun, output: image + "-image-" + arch, platform: guestPlatform})
 		}
-	}
-	platform := runtime.GOOS + "/" + runtime.GOARCH
-	_, _, hostBundle, _, err := nativeToolSelection(platform)
-	if err != nil {
-		return assets, err
 	}
 	hostRun := cfg.ToolsRun
 	if cfg.HostToolsRun != "" {
@@ -142,6 +145,7 @@ func PrepareNativeAssets(ctx context.Context, cfg NativeAssetConfig) (assets Nat
 	if err != nil {
 		return assets, err
 	}
+	diskOutput = strings.TrimSuffix(diskOutput, "arm64") + arch
 	diskRun := cfg.OSRun
 	if diskRun == "" {
 		diskRun = cfg.BootstrapRun
@@ -172,7 +176,7 @@ func PrepareNativeAssets(ctx context.Context, cfg NativeAssetConfig) (assets Nat
 	var siteMembers []string
 	var hostOutput, siteOutput lifecycle.Artifact
 	var hostTools delivery.BinaryBundle
-	for _, bundle := range []string{hostBundle, "site-startup-tools-arm64"} {
+	for _, bundle := range []string{hostBundle, siteBundle} {
 		run := cfg.ToolsRun
 		if bundle == hostBundle {
 			run = hostRun
@@ -181,7 +185,9 @@ func PrepareNativeAssets(ctx context.Context, cfg NativeAssetConfig) (assets Nat
 		if err != nil {
 			return assets, err
 		}
-		if bundle == "site-startup-tools-arm64" {
+		bundlePlatform := platform
+		if bundle == siteBundle {
+			bundlePlatform = guestPlatform
 			siteOutput = observed
 			siteMembers, err = sitePreparationMembers(observed.Components)
 			if err != nil {
@@ -199,6 +205,12 @@ func PrepareNativeAssets(ctx context.Context, cfg NativeAssetConfig) (assets Nat
 		if err != nil {
 			return assets, err
 		}
+		if err := nativeOutputPlatform(runInputs[run].plan, observed, bundlePlatform); err != nil {
+			return assets, err
+		}
+		if contents.OS+"/"+contents.Arch != bundlePlatform {
+			return assets, nvkrerr.New(nvkrerr.CodeVerifyFailed, "native tool output %q differs from selected platform %q", bundle, bundlePlatform)
+		}
 		if bundle == hostBundle {
 			hostTools = contents
 		}
@@ -215,6 +227,9 @@ func PrepareNativeAssets(ctx context.Context, cfg NativeAssetConfig) (assets Nat
 		selection := &selections[i]
 		selection.observed, err = selectedRunOutput(runInputs[selection.root].run, selection.output, "oci")
 		if err != nil {
+			return assets, err
+		}
+		if err := nativeOutputPlatform(runInputs[selection.root].plan, selection.observed, guestPlatform); err != nil {
 			return assets, err
 		}
 		if selection.role == "ovn" {
@@ -235,7 +250,7 @@ func PrepareNativeAssets(ctx context.Context, cfg NativeAssetConfig) (assets Nat
 			selection.reference = "docker.io/nvkr-local/" + selection.role + "@" + selection.observed.Digest
 		}
 		if selection.role == "workload" || slices.Contains(nativeCAPIAuthImages, selection.role) {
-			ref, err := nativeAcquiredImage(runInputs[selection.root].plan, *selection, installer)
+			ref, err := nativeAcquiredImage(runInputs[selection.root].plan, *selection)
 			if err != nil {
 				return assets, err
 			}
@@ -245,7 +260,7 @@ func PrepareNativeAssets(ctx context.Context, cfg NativeAssetConfig) (assets Nat
 			}
 		}
 		root := filepath.Join(selection.root, "packages", selection.output)
-		inspected, err := delivery.InspectContainerImage(ctx, root, "linux/arm64")
+		inspected, err := delivery.InspectContainerImage(ctx, root, guestPlatform)
 		if err != nil || inspected.ManifestDigest != selection.observed.Digest {
 			return assets, errors.Join(err, fmt.Errorf("image %q differs from its completed Run", selection.output))
 		}
@@ -257,7 +272,10 @@ func PrepareNativeAssets(ctx context.Context, cfg NativeAssetConfig) (assets Nat
 	if err != nil {
 		return assets, err
 	}
-	if err := nativeIdentitySources(runInputs[cfg.ToolsRun].plan, runInputs[diskRun].plan, siteOutput.BuildDigest, diskArtifact.BuildDigest, diskOutput); err != nil {
+	if err := nativeOutputPlatform(runInputs[diskRun].plan, diskArtifact, guestPlatform); err != nil {
+		return assets, err
+	}
+	if err := nativeIdentitySources(runInputs[cfg.ToolsRun].plan, runInputs[diskRun].plan, siteOutput.BuildDigest, diskArtifact.BuildDigest, diskOutput, arch); err != nil {
 		return assets, err
 	}
 	// All selected observations/platforms were admitted before creating output.
@@ -272,6 +290,7 @@ func PrepareNativeAssets(ctx context.Context, cfg NativeAssetConfig) (assets Nat
 		return assets, err
 	}
 	assets = NativeAssets{
+		arch:      arch,
 		HostTools: filepath.Join(out, "host"), SiteTools: filepath.Join(out, "site"),
 		Installer: filepath.Join(out, "installer"),
 		Files:     filepath.Join(out, "files"), Images: make(map[string]NativeImageAsset), RuntimeOutputs: runtimeOutputs,
@@ -283,7 +302,7 @@ func PrepareNativeAssets(ctx context.Context, cfg NativeAssetConfig) (assets Nat
 		name, directory string
 		members         []string
 	}{
-		{"site-startup-tools-arm64", assets.SiteTools, siteMembers},
+		{siteBundle, assets.SiteTools, siteMembers},
 	} {
 		phase := beginProgress(cfg.Progress, "native-extract-"+bundle.name, PhaseStarted, PhaseFinished, PhaseFailed)
 		_, err := delivery.ExtractBinaryBundle(ctx, publicationPath, bundle.name, bundle.directory)
@@ -330,8 +349,20 @@ func PrepareNativeAssets(ctx context.Context, cfg NativeAssetConfig) (assets Nat
 	return assets, nil
 }
 
-// The caller has already admitted this exact Plan/output through lifecycle (or
-// the nightly publication expectation). Project only the selected declaration;
+// Local observations omit platform metadata. Read it from the lifecycle-replayed
+// Plan, retaining the exact named output and build rather than inferring from names.
+func nativeOutputPlatform(plan *factory.Plan, output lifecycle.Artifact, platform string) error {
+	for _, build := range plan.Builds {
+		if build.Name == output.Name && build.BuildDigest == output.BuildDigest &&
+			build.Platform == platform && slices.Equal(build.Components, output.Components) {
+			return nil
+		}
+	}
+	return nvkrerr.New(nvkrerr.CodeVerifyFailed, "native output %q differs from its selected platform or build", output.Name)
+}
+
+// The caller has already admitted this exact Plan/output through lifecycle.
+// Project only the selected declaration;
 // graph validity and byte acceptance remain with their existing owners.
 func runtimeImageTag(plan *factory.Plan, output lifecycle.Artifact) (string, error) {
 	var declarations []string
@@ -359,18 +390,24 @@ func runtimeImageTag(plan *factory.Plan, output lifecycle.Artifact) (string, err
 }
 
 // The replayed Plan binds acquisition metadata to the exact named completed
-// output. Upstream owns parent refs; the lock owns the observed ARM64 child.
-func nativeAcquiredImage(plan *factory.Plan, selected nativeImageSelection, installer *nativeInstallerSelection) (name.Digest, error) {
+// output. Upstream owns parent refs; the lock owns the observed native child.
+// Acquisition lineage is independent of NVKE's source commit; the extracted
+// installer separately checks its exact CAPI parent references below.
+func nativeAcquiredImage(plan *factory.Plan, selected nativeImageSelection) (name.Digest, error) {
 	if plan == nil {
 		return name.Digest{}, errors.New("acquired image requires its replayed Run plan")
+	}
+	arch := strings.TrimPrefix(selected.platform, "linux/")
+	if selected.platform != "linux/arm64" && selected.platform != "linux/amd64" {
+		return name.Digest{}, errors.New("acquired image requires its native Linux output")
 	}
 	var component *catalog.Component
 	for _, build := range plan.Builds {
 		if build.Name != selected.output {
 			continue
 		}
-		if build.Platform != "linux/arm64" || build.BuildDigest != selected.observed.BuildDigest {
-			return name.Digest{}, errors.New("acquired image differs from its selected ARM64 output")
+		if build.Platform != "linux/"+arch || build.BuildDigest != selected.observed.BuildDigest {
+			return name.Digest{}, errors.New("acquired image differs from its selected native output")
 		}
 		for _, item := range build.ResolvedComponents {
 			if item.Name != "native-"+selected.role+"-image" {
@@ -383,13 +420,13 @@ func nativeAcquiredImage(plan *factory.Plan, selected nativeImageSelection, inst
 			component = &c
 		}
 	}
-	if component == nil || installer == nil || component.FromSource || component.Prebuilt == nil || len(component.Patches) != 0 || installer.repo == "" || installer.commit == "" || component.Repo != installer.repo || component.Commit != installer.commit || component.SourceDate != installer.sourceDate {
-		return name.Digest{}, errors.New("acquired image and installer source selections differ")
+	if component == nil || component.FromSource || component.Prebuilt == nil || len(component.Patches) != 0 {
+		return name.Digest{}, errors.New("acquired image requires its selected immutable producer")
 	}
 	acquired := component.Prebuilt
 	ref, err := name.NewDigest(acquired.Image, name.StrictValidation)
-	if err != nil || !nativeImageReferenceIsCanonical(ref, acquired.Image) || ref.DigestStr() != acquired.ImageParentDigest || !canonical.IsDigest(acquired.Digests["arm64"]) || acquired.Digests["arm64"] != selected.observed.Digest {
-		return name.Digest{}, errors.New("acquired image parent or ARM64 child differs from its completed Run")
+	if err != nil || !nativeImageReferenceIsCanonical(ref, acquired.Image) || ref.DigestStr() != acquired.ImageParentDigest || !canonical.IsDigest(acquired.Digests[arch]) || acquired.Digests[arch] != selected.observed.Digest {
+		return name.Digest{}, errors.New("acquired image parent or native child differs from its completed Run")
 	}
 	return ref, nil
 }
@@ -477,6 +514,9 @@ func sitePreparationMembers(components []string) ([]string, error) {
 }
 
 func prepareNativeImage(ctx context.Context, selection nativeImageSelection, work, files string) (NativeImageAsset, error) {
+	if selection.platform != "linux/arm64" && selection.platform != "linux/amd64" {
+		return NativeImageAsset{}, nvkrerr.New(nvkrerr.CodeVerifyFailed, "native image requires its admitted Linux platform")
+	}
 	root, err := layout.FromPath(filepath.Join(selection.root, "packages", selection.output))
 	if err != nil {
 		return NativeImageAsset{}, err
@@ -525,7 +565,7 @@ func prepareNativeImage(ctx context.Context, selection nativeImageSelection, wor
 	})); err != nil {
 		return NativeImageAsset{}, err
 	}
-	inspected, err := delivery.InspectContainerImage(ctx, directory, "linux/arm64")
+	inspected, err := delivery.InspectContainerImage(ctx, directory, selection.platform)
 	if err != nil || inspected.ManifestDigest != selection.observed.Digest {
 		return NativeImageAsset{}, errors.Join(err, errors.New("native import alias changed the observed image manifest"))
 	}

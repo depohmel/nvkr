@@ -103,8 +103,7 @@ case "$*" in
  *) exit 23;;
 esac
 `, 0700)
-	profile, build := nightlyIdentityFixture()
-	plan, _ := nightlyCompiledFixture(t, profile, build)
+	plan := nativeCapturedBuildPlanFixture(t)
 	raw, err := canonical.Marshal(plan)
 	if err != nil {
 		t.Fatal(err)

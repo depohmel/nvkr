@@ -81,11 +81,11 @@ func TestNativeArchitectureImportsAndNodeReadiness(t *testing.T) {
 	if accelerator, err := nativeAccelerator("linux/amd64", ""); accelerator != "kvm" || err != nil {
 		t.Fatalf("AMD default accelerator: %q %v", accelerator, err)
 	}
-	if _, _, _, _, err := nativeToolSelection("linux/amd64"); err == nil {
-		t.Fatal("local AMD producer was implicitly enabled")
+	if definition, _, bundle, _, err := nativeToolSelection("linux/amd64"); err != nil || definition != "inputs/definitions/demo/amd64-nvidia-local-kvm.json" || bundle != "native-tools-linux-amd64" {
+		t.Fatalf("explicit local AMD tools unavailable: %v", err)
 	}
 	if members, err := nativeRuntimeToolMembers("linux/amd64"); len(members) == 0 || err != nil {
-		t.Fatalf("published AMD runtime tools unavailable: %v", err)
+		t.Fatalf("local AMD runtime tools unavailable: %v", err)
 	}
 }
 

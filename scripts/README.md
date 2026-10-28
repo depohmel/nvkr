@@ -176,15 +176,10 @@ Signer-policy rejection is covered by the owning consumer contract tests.
 
 ## Focused supporting contracts
 
-`nightly-build.sh` dispatches one maintained generated producer and joins its
-exact GitHub run. The coordinator resolves NVKE `main` once; the script passes
-that full commit to the producer and records it separately from NVKR's workflow
-commit. The separately authored nightly coordinator invokes the Go
-integration test and NVKE's existing runtime suite after authenticated publication.
-See the [nightly workflow and runtime bindings](../docs/nvke-nightly.md).
-The maintained profiles select kind plus native AMD64 and ARM64 KVM guests with
-NVIDIA OVN. NVKR owns the embedded setup/launch adapter; the selected NVKE checkout
-supplies unchanged local Go tests. The special TestGrid integration is deferred.
+The authored nightly workflow calls the existing native Go build/bootstrap test
+on each architecture in one job. It uses no producer-dispatch shell adapter or
+artifact publication between build and test. See the
+[nightly workflow and runtime bindings](../docs/nvke-nightly.md).
 
 - `demo-catalog-change.sh` exercises previewed and machine-managed source pin
   changes against an isolated catalog copy.

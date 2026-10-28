@@ -5,6 +5,7 @@ package nvkedemo
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -13,7 +14,16 @@ import (
 	"time"
 
 	nvkrerr "github.com/dsx-ai-factory/nvkr/pkg/nvkr/errors"
+	"go.yaml.in/yaml/v3"
 )
+
+func assertNightlyCode(t *testing.T, err error, code nvkrerr.Code) {
+	t.Helper()
+	var coded *nvkrerr.Error
+	if err == nil || !errors.As(err, &coded) || coded.Code != code {
+		t.Fatalf("got %v; want %s", err, code)
+	}
+}
 
 func TestNativeE2EOptInIsExplicit(t *testing.T) {
 	for _, row := range []struct {
@@ -27,6 +37,52 @@ func TestNativeE2EOptInIsExplicit(t *testing.T) {
 			}
 			if !row.valid {
 				assertNightlyCode(t, err, nvkrerr.CodeUsage)
+			}
+		})
+	}
+}
+
+func TestNativeE2EExplicitConfigurationKeepsLocalInputsAndGuestResources(t *testing.T) {
+	base := DemoFile{Version: 1,
+		Build: BuildFile{Repo: "/source/nvkr", Definition: "inputs/definition.json", Environment: "inputs/environment.json", NVKR: "/distribution/nvkr", Attempt: "fresh", Jobs: 2, NVKEClone: "/source/nvke"},
+		Run:   RunFile{Out: "/private/site", Network: "ovn", TimeoutSeconds: 3600, Resources: NativeResources{SiteMemoryGiB: 4, TenantMemoryGiB: 4, HeadroomMiB: 1024, VCPUs: 4}},
+	}
+	for _, row := range []struct {
+		name   string
+		change func(*DemoFile)
+		valid  bool
+	}{
+		{"explicit local inputs", func(*DemoFile) {}, true},
+		{"source config conformance", func(file *DemoFile) { file.Run.Conformance = true }, true},
+		{"missing input", func(file *DemoFile) { file.Build.Environment = "" }, false},
+		{"retained artifacts", func(file *DemoFile) { file.Run.Runs.Artifacts = "/old/run" }, false},
+		{"partial resources", func(file *DemoFile) { file.Run.Resources.HeadroomMiB = 0 }, false},
+	} {
+		t.Run(row.name, func(t *testing.T) {
+			file := base
+			row.change(&file)
+			raw, err := yaml.Marshal(file)
+			if err != nil {
+				t.Fatal(err)
+			}
+			path := filepath.Join(t.TempDir(), "e2e.yaml")
+			if err := os.WriteFile(path, raw, 0600); err != nil {
+				t.Fatal(err)
+			}
+			build, cfg, tenant, err := nativeE2EConfig(t.Context(), func(key string) string {
+				if key == "NVKR_NVKE_E2E_CONFIG" {
+					return path
+				}
+				return ""
+			})
+			if (err == nil) != row.valid {
+				t.Fatalf("error=%v", err)
+			}
+			if !row.valid {
+				return
+			}
+			if build.Definition != file.Build.Definition || build.Environment != file.Build.Environment || build.NVKR != file.Build.NVKR || build.NVKEClone != file.Build.NVKEClone || cfg.Resources != file.Run.Resources || !cfg.Cleanup || cfg.Runs != (RunInputs{}) || cfg.NVKR != "" || tenant != file.Run.Conformance {
+				t.Fatalf("local input or guest resource selection changed: build=%+v run=%+v tenant=%v", build, cfg, tenant)
 			}
 		})
 	}
@@ -54,7 +110,7 @@ func TestNativeE2EConfigurationSelectsSuiteBeforeBuild(t *testing.T) {
 				"NVKE_LOCAL_CLONE": "/source/nvke", "NVKR_NVKE_E2E_TENANT": row.tenant, "NVKR_NVKE_E2E_CONFORMANCE": row.conformance,
 			}
 			delete(env, row.missing)
-			build, cfg, tenant, err := nativeE2EConfig(func(key string) string { return env[key] })
+			build, cfg, tenant, err := nativeE2EConfig(t.Context(), func(key string) string { return env[key] })
 			if (err == nil) != row.valid {
 				t.Fatalf("error=%v", err)
 			}

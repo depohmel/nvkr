@@ -24,7 +24,7 @@ const githubImageToken = "NVKR_TOOLCHAIN_READ_TOKEN"
 const githubImageUser = "NVKR_TOOLCHAIN_READ_USER"
 
 func githubPrivateToolchain(plan *Plan, image string) bool {
-	if !githubNativeDiskPolicy(plan) || !strings.Contains(image, "@sha256:") {
+	if plan.Environment.GitHubARC != "native-kvm-v1" || !strings.Contains(image, "@sha256:") {
 		return false
 	}
 	if GitHubDiskBuildOnly(plan) {
@@ -50,7 +50,6 @@ func githubPrivateToolchain(plan *Plan, image string) bool {
 	switch prefix {
 	case "ghcr.io/dsx-ai-factory/nvkr/m2-candidate",
 		"ghcr.io/dsx-ai-factory/nvkr/m2-candidate/disks",
-		"ghcr.io/dsx-ai-factory/nvkr/nightly/nvke-nightly-amd64",
 		"ghcr.io/dsx-ai-factory/nvkr/nightly/nvke-nightly-arm64",
 		"ghcr.io/dsx-ai-factory/nvkr/nightly/nvke-nightly-upstream-ovn-arm64":
 		return strings.HasPrefix(image, "ghcr.io/dsx-ai-factory/nvkr/m2-candidate/toolchains/")

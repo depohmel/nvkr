@@ -79,9 +79,8 @@ retains its original scope; superseded requirements and plans are available only
    errors, never warnings or silent defaults.
 4. **Never overclaim.** Distinguish implemented, contract-tested, and externally exercised. Mocks and unit tests
    do not prove registries, CI, signing services, or runners.
-5. **Generated CI defaults to generic hosted runners.** ADR-18 permits the explicit `native-kvm-v1`
-   ARC disk route on `arc-amd64-kvm` and `arc-arm64-kvm`, and the separate `native-amd64-v1`
-   hosted KVM route on `ubuntu-24.04`; no arbitrary self-hosted labels or qualified
+5. **Generated CI defaults to generic hosted runners.** ADR-18 permits only the explicit `native-kvm-v1`
+   ARC disk route on `arc-amd64-kvm` and `arc-arm64-kvm`; no arbitrary self-hosted labels or qualified
    claims. Maintained execution targets are local and GitHub; publication and signing are GitHub-only in v1.
 6. **Do not commit, push, tag, or open PRs unless explicitly asked.** Leave the working tree for the user to
    review.
@@ -165,7 +164,7 @@ and excluded from logical build identity; attempt metadata may affect its own Ru
 | Accept a caller-provided digest, path, or boolean as proof | Authenticate in the owning module and issue an opaque receipt bound to the bytes |
 | Raw `sha256.Sum256` as a structured identity | Use the canonical codec and an existing typed digest family |
 | Log a warning and continue on a validation, pin, or signature problem | Return a coded error; fail closed |
-| Emit an arbitrary self-hosted runner label or a `git tag` trigger in a generated workflow | Generic hosted runners, with ADR-18's explicit native hosted KVM and ARC disk policies; sign through the admitted default-branch workflow |
+| Emit an arbitrary self-hosted runner label or a `git tag` trigger in a generated workflow | Generic hosted runners, with only ADR-18's explicitly admitted native ARC disk exception; sign through the admitted default-branch workflow |
 | Hand-edit `.github/workflows/nvkr-run.yml` or `pins.lock.yaml` | Regenerate with `run generate` from the Definition and Environment, or `catalog pin`; edit authored inputs, not generated output |
 | Claim a feature works because a unit test with a fake passes | Cite the exact external Run or release artifact and its scope in reconciliation |
 | Write repo paths, commands, or code identifiers into a product spec or epic | Specs use product nouns only; implementation detail belongs in ADRs and code |

@@ -34,7 +34,7 @@ separate acceptance decisions:
 |---|---|---|
 | Producer and consumer | NVIDIA's hosted workflow produces artifacts; consumers verify the published digest | Publisher provides signed expected identities; an operator reproduces and verifies in its own environment |
 | Claim | Production by a named workflow with signed SLSA v1 production provenance; ADR-16 §5 targets SLSA Build L2 | Exact-byte reproduction of each named claim subject within a signed builder profile, supported by authenticated execution observations |
-| Execution | Generic GitHub-hosted native AMD64/ARM64 producer execution plus ADR-18's explicit hosted AMD64 KVM and native ARC disk routes; declared hermetic, wrapped, or acquired source lane | Profile-bounded execution with authenticated runtime and terminal receipts; unsupported providers fail closed |
+| Execution | Generic GitHub-hosted native AMD64/ARM64 producer execution plus ADR-18's explicit native KVM ARC disk route; declared hermetic, wrapped, or acquired source lane | Profile-bounded execution with authenticated runtime and terminal receipts; unsupported providers fail closed |
 | Publication | Signed artifact bytes in OCI; planned build/evidence qualification and release manifest | Operator-owned publication of a complete cleared release through the Publication Root protocol |
 | Consumer policy | Keyless build identity and issuer; separate qualification identity for the planned M3 gate | Trusted roles, reproduction, compatibility, conformance, evidence, policy, and fresh status |
 | Outside the lane | Reproduction, clearance, air gap, cluster-scoped qualification, registration | No relaxation from a v1 signature or a v1 qualification verdict |
@@ -51,12 +51,11 @@ NVKR does not operate a registry, provision clusters, or manage fleet lifecycle.
 access, registry retention, runtime acceptance and deployment policy. NVKR offers explicit descriptive local
 diagnostics under ADR-16 §6; these do not qualify a cluster. Downstream systems consume accepted artifact
 references and own deployment descriptions and acceptance decisions (ADR-19/20).
-A separately authored repository CI adapter schedules producer Runs and invokes
-NVKE's suite in a separate downstream job outside this product lifecycle and v1
-qualification acceptance (ADR-16/18). NVKE owns guest/cluster provisioning,
-assertions and teardown; the parent harness owns host admission, outer leases,
-disk service and journaled network-control restoration. These trusted-code CI
-diagnostics do not add runtime authority to the artifact-verification core.
+A separately authored nightly CI workflow resolves one NVKE main commit and
+builds and tests it locally in architecture matrix jobs. Existing native Go
+owners drive site bootstrap, readiness assertions and joined VM/backend/network
+cleanup. Artifacts stay on the runner. These trusted-code integration results
+remain outside product lifecycle and v1 qualification acceptance (ADR-16/18).
 
 Proposed [ADR-24](adr/0024-imported-validator-catalog.md) separates imported-validator discovery from upstream
 test ownership and binds named artifact roles through explicit diagnostic profiles. The provisional CLI
@@ -461,19 +460,6 @@ The maintained M2 Definition also selects public-bootstrap FDE outputs for both 
 `build-provenance-v1` publication. Exact encryption metadata and payload identity are bound through delivery
 and signed release metadata; strict FDE inspection and qualified reproduction remain closed. The recorded
 AMD64 diagnostic bake does not establish FDE publication or ARM64 FDE operational acceptance.
-
-The separate nightly coordinator resolves NVKE `main` once and binds its exact
-commit to the generated runtime Plan, all source-built NVKE components and the
-authenticated installer source archive. NVKR owns this repository CI orchestration,
-artifact handoff and direct native Go smoke test. Its existing native lifecycle
-bootstraps a permanent site-controller VM through a temporary kind/Lima backend
-that stops and joins before optional tenant checks. Default coverage is the live
-site API and identified Ready node; explicit tenant checks add native readiness,
-cloud-init and selected-image workload/DNS. Conformance remains a separate local
-opt-in. External dependencies retain their reviewed catalog selections;
-the latest source policy does not assert a refreshed dependency inventory or a
-successful deployment. Runtime publication and cleanup acceptance still require
-a completed recorded cycle.
 
 The [recorded M2 candidate](https://github.com/dsx-ai-factory/nvkr/blob/a187d6b702cbc1a70452760c606c2c4de1ed6618/docs/evidence/2026-10-06-team-demo-pipeline.md) completed generated hosted delivery,
 signing, verification and finalization for all 34 outputs, including AMD64 and ARM64 disks. It used the

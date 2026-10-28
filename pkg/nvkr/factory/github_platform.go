@@ -104,12 +104,8 @@ func admitGitHubNodePlatform(plan *Plan, node Node, observed string) error {
 const githubPlatformCheckName = "Check native runner platform"
 
 func githubPlatformCheck(plan *Plan, runner string) (string, error) {
-	hostedKVM := plan.Environment.GitHubHostedKVM == "native-amd64-v1"
-	if len(plan.Environment.GitHubRunners) == 0 && !hostedKVM {
+	if len(plan.Environment.GitHubRunners) == 0 {
 		return "", nil
-	}
-	if hostedKVM && runner != "ubuntu-24.04" {
-		return "", e.New(e.CodeEngineCapability, "hosted native KVM requires the exact ubuntu-24.04 runner")
 	}
 	platform, err := authored.GitHubRunnerPlatform(githubBootstrapRunner(runner))
 	if err != nil {
@@ -119,11 +115,7 @@ func githubPlatformCheck(plan *Plan, runner string) (string, error) {
 	if platform == "linux/arm64" {
 		machine = "aarch64"
 	}
-	command := fmt.Sprintf("set -eu\nif [ \"$(uname -s)/$(uname -m)\" != %s ]; then printf 'NVKR-E-ENGINE-CAPABILITY: expected native %s runner\\n' >&2; exit %d; fi", shellQuote("Linux/"+machine), platform, e.ExitCode(e.New(e.CodeEngineCapability, "foreign runner")))
-	if hostedKVM {
-		command += fmt.Sprintf("\nif [ \"${RUNNER_ENVIRONMENT:-}\" != github-hosted ]; then printf 'NVKR-E-ENGINE-CAPABILITY: expected GitHub-hosted allocation\\n' >&2; exit %d; fi", e.ExitCode(e.New(e.CodeEngineCapability, "foreign provider")))
-	}
-	return command, nil
+	return fmt.Sprintf("set -eu\nif [ \"$(uname -s)/$(uname -m)\" != %s ]; then printf 'NVKR-E-ENGINE-CAPABILITY: expected native %s runner\\n' >&2; exit %d; fi", shellQuote("Linux/"+machine), platform, e.ExitCode(e.New(e.CodeEngineCapability, "foreign runner"))), nil
 }
 
 func writeGitHubPlatformCheck(out *bytes.Buffer, plan *Plan, runner string) error {

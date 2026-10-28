@@ -8,9 +8,11 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"os/signal"
 	"path/filepath"
 	"runtime"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 )
@@ -24,13 +26,13 @@ func TestEndToEnd(t *testing.T) {
 		t.Fatal(err)
 	}
 	if !enabled {
-		t.Skip("set NVKR_NVKE_E2E=1 on a dedicated native ARM64 host to build and bootstrap real NVKE")
+		t.Skip("set NVKR_NVKE_E2E=1 on a dedicated native host to build and bootstrap real NVKE")
 	}
-	if runtime.GOARCH != "arm64" || runtime.GOOS != "linux" && runtime.GOOS != "darwin" {
-		t.Fatal("E2E requires dedicated native Ubuntu or macOS ARM64")
-	}
-	build, cfg, tenantChecks, err := nativeE2EConfig(os.Getenv)
+	build, cfg, tenantChecks, err := nativeE2EConfig(t.Context(), os.Getenv)
 	if err != nil {
+		t.Fatal(err)
+	}
+	if err := admitNativeBuildHost(runtime.GOOS+"/"+runtime.GOARCH, build.Definition != ""); err != nil {
 		t.Fatal(err)
 	}
 	workBudget := 8 * time.Hour
@@ -49,10 +51,22 @@ func TestEndToEnd(t *testing.T) {
 			workDeadline = latestWork
 		}
 	}
-	ctx, cancel := context.WithDeadline(t.Context(), workDeadline)
+	signalCtx, stop := signal.NotifyContext(t.Context(), syscall.SIGINT, syscall.SIGTERM)
+	defer stop()
+	ctx, cancel := context.WithDeadline(signalCtx, workDeadline)
 	defer cancel()
 	if err := AdmitDemoDeployment(ctx, cfg); err != nil {
 		t.Fatal(err)
+	}
+	if commit := os.Getenv("NVKR_NVKE_SOURCE_COMMIT"); commit != "" {
+		tools, _, _, _, selectErr := nativeToolSelection(runtime.GOOS + "/" + runtime.GOARCH)
+		if selectErr != nil {
+			t.Fatal(selectErr)
+		}
+		build.Definition, err = freezeNativeE2ESource(ctx, build, commit, tools)
+		if err != nil {
+			t.Fatal(err)
+		}
 	}
 	built, err := BuildArtifacts(ctx, build)
 	if err != nil {
@@ -121,12 +135,7 @@ func nativeE2EOptIn(name, value string) (bool, error) {
 	}
 }
 
-func nativeE2EConfig(getenv func(string) string) (BuildConfig, Config, bool, error) {
-	for _, key := range []string{"NVKR_NVKE_E2E_REPO", "NVKR_NVKE_E2E_OUT", "NVKR_NVKE_E2E_ATTEMPT"} {
-		if !configString(getenv(key)) {
-			return BuildConfig{}, Config{}, false, configUsage("explicit " + key + " required")
-		}
-	}
+func nativeE2EConfig(ctx context.Context, getenv func(string) string) (BuildConfig, Config, bool, error) {
 	tenant, err := nativeE2EOptIn("NVKR_NVKE_E2E_TENANT", getenv("NVKR_NVKE_E2E_TENANT"))
 	if err != nil {
 		return BuildConfig{}, Config{}, false, err
@@ -135,22 +144,36 @@ func nativeE2EConfig(getenv func(string) string) (BuildConfig, Config, bool, err
 	if err != nil {
 		return BuildConfig{}, Config{}, false, err
 	}
-	repo := getenv("NVKR_NVKE_E2E_REPO")
+	var file DemoFile
+	if path := getenv("NVKR_NVKE_E2E_CONFIG"); path != "" {
+		file, err = LoadDemoFile(ctx, path)
+		if err != nil {
+			return BuildConfig{}, Config{}, false, err
+		}
+	} else {
+		for _, key := range []string{"NVKR_NVKE_E2E_REPO", "NVKR_NVKE_E2E_OUT", "NVKR_NVKE_E2E_ATTEMPT"} {
+			if !configString(getenv(key)) {
+				return BuildConfig{}, Config{}, false, configUsage("explicit " + key + " required")
+			}
+		}
+		file = DemoFile{Version: 1,
+			Build: BuildFile{Repo: getenv("NVKR_NVKE_E2E_REPO"), Attempt: getenv("NVKR_NVKE_E2E_ATTEMPT"), Jobs: 1, NVKEClone: getenv("NVKE_LOCAL_CLONE")},
+			Run:   RunFile{Out: getenv("NVKR_NVKE_E2E_OUT"), Network: "ovn", TimeoutSeconds: DefaultTenantTimeoutSeconds},
+		}
+	}
+	file.Run.Conformance = file.Run.Conformance || conformance
+	file.Run.Cleanup = true
 	binary := getenv("NVKR_NVKE_E2E_BINARY")
 	if binary == "" {
-		binary = filepath.Join(repo, "bin", "nvke-demo")
+		binary = filepath.Join(file.Build.Repo, "bin", "nvke-demo")
 	}
 	binary, err = filepath.Abs(binary)
 	if err != nil {
 		return BuildConfig{}, Config{}, false, err
 	}
-	file := DemoFile{Version: 1,
-		Build: BuildFile{Repo: repo, Attempt: getenv("NVKR_NVKE_E2E_ATTEMPT"), Jobs: 1, NVKEClone: getenv("NVKE_LOCAL_CLONE")},
-		Run:   RunFile{Out: getenv("NVKR_NVKE_E2E_OUT"), Network: "ovn", Cleanup: true, Conformance: conformance, TimeoutSeconds: DefaultTenantTimeoutSeconds},
-	}
 	build, cfg, err := file.E2EConfig(os.Stdout)
 	build.DemoExecutable, cfg.DemoExecutable = binary, binary
-	return build, cfg, tenant || conformance, err
+	return build, cfg, tenant || cfg.Conformance, err
 }
 
 func nativeE2ESiteSmoke(ctx context.Context, site *NativeSite) error {

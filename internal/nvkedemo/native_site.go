@@ -39,7 +39,6 @@ type NativeConfig struct {
 	Assets                  NativeAssetConfig
 	Cleanup, Walkthrough    bool
 	Progress                io.Writer
-	publication             *nativePublicationInputs
 }
 
 type nativeSiteAttempt struct {
@@ -52,7 +51,6 @@ type nativeSiteAttempt struct {
 	tenantTimeout             time.Duration
 	conformance               *nativeConformanceConfig
 	assets                    NativeAssets
-	publishedDisk             *nativePublishedDisk
 	handoff                   *nativeHandoff
 	files                     string
 	cleanup, walkthrough      bool
@@ -119,7 +117,7 @@ func runNativeSite(ctx context.Context, cfg NativeConfig, use func(context.Conte
 	if err != nil {
 		return err
 	}
-	if cfg.publication == nil && (cfg.Image == "" || cfg.Assets.RuntimeRun == "") {
+	if cfg.Image == "" || cfg.Assets.RuntimeRun == "" {
 		return errors.New("require a local QCOW, explicit accelerator and completed runtime-image Run")
 	}
 	out, err := freshDestination(cfg.Out)
@@ -134,10 +132,8 @@ func runNativeSite(ctx context.Context, cfg NativeConfig, use func(context.Conte
 	if err := capacity.check(ctx, filepath.Dir(out), false, cfg.Progress); err != nil {
 		return err
 	}
-	if cfg.publication == nil {
-		if _, err := DigestFile(ctx, cfg.Image); err != nil {
-			return err
-		}
+	if _, err := DigestFile(ctx, cfg.Image); err != nil {
+		return err
 	}
 	if err := os.Mkdir(out, 0700); err != nil {
 		return err
@@ -146,23 +142,13 @@ func runNativeSite(ctx context.Context, cfg NativeConfig, use func(context.Conte
 	cfg.Assets.Out = filepath.Join(out, "assets")
 	cfg.Assets.Progress = cfg.Progress
 	preparation := beginProgress(cfg.Progress, "installer-preparation", PhaseStarted, PhaseFinished, PhaseFailed)
-	var assets NativeAssets
-	var publishedDisk *nativePublishedDisk
-	if cfg.publication == nil {
-		assets, err = PrepareNativeAssets(ctx, cfg.Assets)
-	} else {
-		var disk nativePublishedDisk
-		assets, disk, err = cfg.publication.prepare(ctx, cfg.Assets.Out)
-		cfg.Image = disk.path
-		publishedDisk = &disk
-	}
+	assets, err := PrepareNativeAssets(ctx, cfg.Assets)
 	preparation.finish(err)
 	if err != nil {
 		return err
 	}
 	reportProgress(cfg.Progress, ProgressEvent{Kind: NativeDeployment, ExpectedNodes: tenantNodes, Conformance: cfg.conformance != nil})
 	attempt := &nativeSiteAttempt{use: use, assets: assets, cleanup: cfg.Cleanup, walkthrough: cfg.Walkthrough, network: mode, tenantTimeout: cfg.TenantTimeout, conformance: cfg.conformance, tenantNodes: tenantNodes, resources: resources, capacity: capacity}
-	attempt.publishedDisk = publishedDisk
 	result = RunNativeGuest(ctx, NativeGuestConfig{
 		Image: cfg.Image, Tools: assets.HostTools, Out: filepath.Join(out, "runtime"),
 		Accelerator: cfg.Accelerator, Progress: cfg.Progress, site: attempt, DemoExecutable: cfg.DemoExecutable,

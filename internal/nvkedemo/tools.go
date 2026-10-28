@@ -65,17 +65,14 @@ func nativeToolSelection(platform string) (definition, environment, bundle strin
 		return "inputs/definitions/demo/native-mac/definition-tools.json", "inputs/environments/local-native-mac.json", "native-tools-darwin-arm64", []string{"clusterctl", "helm", "kind", "kubectl", "nerdctl", "nico-sim", "nico-simctl", "nvke-installer-sources", "nvkectl", "oras", "vmnet-client", "vmnet-helper"}, nil
 	case "linux/arm64":
 		return "inputs/definitions/demo/native-linux/definition-tools.json", "inputs/environments/local-native-linux.json", "native-tools-linux-arm64", []string{"clusterctl", "helm", "kind", "kubectl", "nerdctl", "nico-sim", "nico-simctl", "nvke-installer-sources", "nvkectl", "oras"}, nil
+	case "linux/amd64":
+		return "inputs/definitions/demo/amd64-nvidia-local-kvm.json", "inputs/environments/local-amd64-kvm.json", "native-tools-linux-amd64", []string{"clusterctl", "helm", "kind", "kubectl", "nerdctl", "nico-sim", "nico-simctl", "nvke-installer-sources", "nvkectl", "oras"}, nil
 	default:
 		return "", "", "", nil, nvkrerr.New(nvkrerr.CodeEngineCapability, "native demo tools do not support host %q", platform)
 	}
 }
 
-// Runtime views may be prepared from an authenticated publication without
-// selecting or authoring an additional local build Definition.
 func nativeRuntimeToolMembers(platform string) ([]string, error) {
-	if platform == "linux/amd64" {
-		return []string{"clusterctl", "helm", "kind", "kubectl", "nerdctl", "nico-sim", "nico-simctl", "nvke-installer-sources", "nvkectl", "oras"}, nil
-	}
 	_, _, _, members, err := nativeToolSelection(platform)
 	return members, err
 }
@@ -105,6 +102,9 @@ type producedToolRun struct {
 func produceToolRun(ctx context.Context, cfg ToolConfig, platform string) (producedToolRun, error) {
 	if err := requireContext(ctx); err != nil {
 		return producedToolRun{}, err
+	}
+	if platform == "linux/amd64" {
+		return producedToolRun{}, nvkrerr.New(nvkrerr.CodeEngineCapability, "native AMD64 tools are supplied by the explicitly selected artifact Definition; standalone tool preparation remains unsupported")
 	}
 	definition, environment, bundle, _, err := nativeToolSelection(platform)
 	if err != nil {
@@ -283,7 +283,7 @@ func prepareTools(ctx context.Context, cfg ToolConfig, platform string) (string,
 			return "", err
 		}
 	}
-	if platform == "darwin/arm64" || platform == "linux/arm64" {
+	if platform == "darwin/arm64" || platform == "linux/arm64" || platform == "linux/amd64" {
 		installer := filepath.Join(out, "installer")
 		if err := os.Mkdir(installer, 0o700); err != nil {
 			return "", err

@@ -657,7 +657,7 @@ func TestProductionRunCannotSelectKindSiteWorkflow(t *testing.T) {
 		t.Fatal("missing artifacts unexpectedly started deployment")
 	}
 	platform := runtime.GOOS + "/" + runtime.GOARCH
-	if platform != "darwin/arm64" && platform != "linux/arm64" {
+	if platform != "darwin/arm64" && platform != "linux/arm64" && platform != "linux/amd64" {
 		assertCode(t, err, nvkrerr.CodeEngineCapability)
 		if !strings.Contains(err.Error(), "native demo does not support host") {
 			t.Fatalf("unsupported host selected another deployment owner: %v", err)

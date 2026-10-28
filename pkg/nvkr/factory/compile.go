@@ -26,7 +26,6 @@ func CompileDocuments(ctx context.Context, definitionPath string, definition aut
 func compileDocumentsWithLoader(ctx context.Context, definitionPath string, definition authored.Definition,
 	environmentPath string, delivery authored.Environment, generatorVersion string,
 	loadStack func(context.Context, authored.Catalog) (*catalog.Stack, error),
-	runtimeSourceCommit ...string,
 ) (*Plan, error) {
 	if ctx == nil {
 		return nil, e.New(e.CodeUsage, "definition compilation requires a context")
@@ -50,7 +49,7 @@ func compileDocumentsWithLoader(ctx context.Context, definitionPath string, defi
 		targetStacks[target.Name] = targetStack
 	}
 	return compileWithTargetStacks(ctx, definition, delivery, stack, targetStacks, generatorVersion,
-		filepath.ToSlash(filepath.Clean(definitionPath)), filepath.ToSlash(filepath.Clean(environmentPath)), runtimeSourceCommit...)
+		filepath.ToSlash(filepath.Clean(definitionPath)), filepath.ToSlash(filepath.Clean(environmentPath)))
 
 }
 
@@ -95,7 +94,7 @@ func Compile(ctx context.Context, definition authored.Definition, delivery autho
 }
 
 func compileWithTargetStacks(ctx context.Context, definition authored.Definition, delivery authored.Environment, stack *catalog.Stack,
-	targetStacks map[string]*catalog.Stack, generatorVersion, definitionPath, environmentPath string, runtimeSourceCommit ...string) (*Plan, error) {
+	targetStacks map[string]*catalog.Stack, generatorVersion, definitionPath, environmentPath string) (*Plan, error) {
 	if ctx == nil {
 		return nil, e.New(e.CodeUsage, "factory compilation requires a context")
 	}
@@ -133,12 +132,6 @@ func compileWithTargetStacks(ctx context.Context, definition authored.Definition
 		DefinitionPath: definitionPath, EnvironmentPath: environmentPath,
 		CatalogDigest: stack.Digest, CatalogSnapshot: snapshot.Catalog, AppliedOverlays: append([]catalog.AppliedOverlay(nil), stack.Applied...),
 		Graph: ArtifactGraph{SchemaVersion: ArtifactGraphSchema}}
-	if len(runtimeSourceCommit) > 1 {
-		return nil, e.New(e.CodeUsage, "compilation accepts one exact runtime source commit")
-	}
-	if len(runtimeSourceCommit) == 1 {
-		plan.RuntimeSourceCommit = runtimeSourceCommit[0]
-	}
 	for _, target := range definition.Outputs {
 		if err := ctx.Err(); err != nil {
 			return nil, e.Wrap(e.CodeTimeout, err, "factory compilation canceled")

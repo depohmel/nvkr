@@ -20,7 +20,7 @@ const githubDiskBuildFinalizerTimeoutMinutes = 120
 const githubReleaseFinalizerTimeoutMinutes = 120
 
 // Build-only finalization restores the complete raw disk/material/source closure.
-// Keep its storage on the one disk output's explicitly selected native runner. A
+// Keep its storage on the one disk output's explicitly selected ARC pool. A
 // mixed-output closure has no admitted aggregate scratch-capacity contract.
 func githubDiskBuildFinalizerRunner(plan *Plan) (string, error) {
 	if !GitHubDiskBuildOnly(plan) || len(plan.LifecycleOutputs) != 1 || plan.LifecycleOutputs[0].Kind != PackageDiskImage || len(plan.Builds) != 1 {
@@ -32,7 +32,7 @@ func githubDiskBuildFinalizerRunner(plan *Plan) (string, error) {
 			continue
 		}
 		binding := node.ExecutionBinding
-		if runner != "" || binding.Class.RunsOn == "" || binding.Class.RunsOn != githubNativeDiskRunner(plan, string(binding.Class.HostPlatform)) {
+		if runner != "" || binding.Class.RunsOn == "" || binding.Class.RunsOn != githubARCRunner(string(binding.Class.HostPlatform)) {
 			return "", e.New(e.CodeEngineCapability, "GitHub build-only disk finalization requires one admitted native ARC root")
 		}
 		runner = binding.Class.RunsOn

@@ -291,39 +291,6 @@ or weaker isolation. Rootless operation still depends on supported user namespac
 cgroups and the provider's nesting policy. A mounted privileged Docker socket remains an explicit trust cost.
 Missing prerequisites fail capability admission. Arbitrary self-hosted labels are not admitted by the native disk route.
 
-The separate `githubHostedKVM: native-amd64-v1` policy prepares native AMD64 direct-Packer
-QCOW2 execution on the exact generic `ubuntu-24.04` route. It requires an explicit
-`githubRunners` map containing only `linux/amd64: ubuntu-24.04`, native AMD64 execution classes
-on that same label, and the existing main-only `nvkr-release` deployment Environment. That
-shared branch gate grants the producer no publication credential or OIDC permission. It cannot be combined
-with `githubARC`, `githubDevelopment` or a legacy `runsOn` override. Every generated job checks
-the native kernel architecture and GitHub's `RUNNER_ENVIRONMENT=github-hosted` context before
-checkout or input transfer; a self-hosted allocation or absent context fails closed. This context
-check is provider routing admission, not independent hardware or allocation attestation.
-
-This policy reuses the native disk grouping, held-owner lifetime, pinned toolchain admission,
-required-KVM Docker projection, bounded execution and disk evidence contracts below without
-changing ARC's two labels or deployment Environment. Credentialed source acquisition, storage
-transfer, publication and signing remain separate from producer execution. Build-only diagnostics
-remain `static-unqualified`; signed publication remains `pipeline-attested`. The fixed KVM
-permission bootstrap is allowed only on the selected ephemeral hosted job and grants no runtime
-authority. A credential-free disk-stage preflight checks CPU, available memory and filesystem
-headroom against the selected class before input transfer. These coarse host readings cannot
-authenticate an allocation or replace the helper's cgroup-aware, held-workspace and KVM API
-admission, repeated before toolchain or producer work.
-
-An execution-class resource declaration is an admission limit, not a measured workload minimum
-or an allocation guarantee. A standard hosted runner's label does not establish that the selected
-class and downstream E2E thresholds will pass. No organization-specific larger runner
-label is admitted without a separately reviewed provider mapping; arbitrary labels do not become
-GitHub-hosted merely by being configured. Deployment policy, private storage access and an externally
-completed producer/E2E cycle remain prerequisites. Build and E2E resource demand must be measured
-separately before concluding that a larger runner is necessary; choosing a larger runner also
-requires its reviewed provider binding. Source-contract tests, resource-gate refusal or successful
-QEMU KVM initialization do not establish workload resource minima or a working full nightly. The
-authored NVKE E2E adapter must independently admit its AMD64 host and exact candidate; this producer policy
-does not authorize or prove that downstream runtime.
-
 The pipeline-attested `githubARC: native-kvm-v1` Environment policy admits only native Linux AMD64 and ARM64
 direct-Packer QCOW2 outputs with required KVM. Plain outputs retain their strict or build-provenance evidence
 selection. ADR-10's explicit public-bootstrap LUKS2 outputs require `diskEvidence: build-provenance-v1` for
@@ -541,53 +508,34 @@ belong to Environment/profile configuration; component toolchains remain produce
 
 #### Repository NVKE E2E adapter outside generated execution
 
-The separately authored repository CI adapter uses `ubuntu-24.04` with `nvkr-release`
-for AMD64, and `arc-arm64-kvm` with `nvkr-arc` for ARM64, for the existing native
-Go site-VM lifecycle. A private temporary Lima backend runs kind for site
-bootstrap; it stops and joins before optional tenant provisioning. The permanent
-site controller and any selected tenant nodes are native KVM VMs. This engineering contract is
-outside generated Run execution and v1 product qualification acceptance; it adds
-no Environment runtime engine, public runtime API or qualified runner claim.
-The generated adapter's native disk policy above remains unchanged. Other labels
-and downstream runtime targets are unsupported by this E2E adapter.
+The separately authored nightly workflow resolves one NVKE main commit and runs
+an architecture matrix: AMD64 on `ubuntu-24.04` with `nvkr-release`, ARM64 on
+`arc-arm64-kvm` with `nvkr-arc`. Each job builds and tests locally through the
+existing Go build, native site and cleanup owners. Its local Environment has no
+publication or signing configuration. It emits no artifact uploads or shared
+build caches and does not dispatch generated producer workflows.
 
-NVKR's scheduled Go test consumes the authenticated publication through its
-existing native asset, installer, guest and site owners, using the same native
-deployment and smoke checks as the opt-in local Go test. NVKE's source-built CLI
-and simulator own installation and guest operations. The default nightly checks
-the live site API and identified Ready node. Explicit tenant checks add real
-tenant readiness, per-node cloud-init, selected-image workload/DNS and exact
-KVM-domain observations; conformance remains a separate longer local opt-in.
-The scheduled path does not compile NVKE's separate controller E2E suite or
-rebuild published product components. All source-built NVKE outputs, including
-the authenticated installer source archive, bind to the one frozen latest-main
-commit; runtime requires no additional NVKE checkout.
-NVKR owns cleanup supervision, host admission, serialization, the disk service,
-network-control mutation and journaled restoration. It requires
-native architecture, KVM, host packages, exact source and private workspace before
-host mutation and joins both owners before reporting a successful cycle. Missing
-cleanup evidence retains recovery controls and fails the cycle.
+Source selection appends exact catalog-owned source overlays in a private attempt
+and uses the ordinary captured-input local execution path. Checked-in source
+pins, existing overlay predecessors and independently acquired dependency pins
+retain their respective ownership. One reviewed alternate CAPI init-image
+acquisition supports main without changing the retained tagged demo. NVKE's
+source-owned installer continues checking its exact image references.
 
-The selected NVKE code and native runtime are fully trusted. Their sudo and runtime access are
-root-equivalent on the runner; running under the parent's UID means it can access
-the parent's read-only job token despite environment scrubbing. Private paths
-and separate workflow jobs do not establish an independent sandbox or signer.
-The test's unsigned outcomes therefore remain diagnostics, including its own
-pass verdict. A label, configured schedule or local contract test proves neither
-pool access nor combined runtime acceptance. Provider admission and the first
-combined cycle remain external evidence in reconciliation; no organizational
-tool approval or named-decider ratification is inferred.
+NVKE's built CLI bootstraps a real site-controller VM through a temporary
+kind/Lima backend; the Go test checks the live site API and Ready node and joins
+owned VM, backend and network cleanup. Tenant workload/DNS checks are explicit
+manual opt-ins. Native architecture, KVM, source/toolchain access and actual
+capacity remain admission requirements, not properties inferred from a label.
+Every job and blocking operation has a bounded lifetime; the Go test reserves
+independent cleanup time within the outer job deadline.
 
-The AMD64 profile selects four vCPUs, 4 GiB for the site VM, 4 GiB per tenant VM
-and 1 GiB host/QEMU headroom. Capacity admission includes the larger bootstrap
-or tenant phase and the largest actual VM CPU allocation; sizing is projected
-into the simulator seed and checked against observed Linux domains. These
-configured budgets are not measured minima. ARM64's existing default sizing is
-unchanged. Linux uses the exact source-built Lima `f47461e` prerequisite with
-architecture-specific checksum-bound Ubuntu and nerdctl materials; the hosted
-AMD64 job provisions it while ARM64 operators supply the matched installation.
-The historical ARM64 backend-only pilot does not establish a complete nightly
-publication-to-runtime cycle.
+This is downstream repository CI infrastructure outside generated producer
+execution and v1 qualification acceptance. Trusted NVKE code has sudo and Docker
+access; local paths and environment scrubbing provide no independent sandbox.
+Outcomes remain unsigned diagnostics. Existing generated ARC disk policies are
+unchanged, and this architecture matrix does not add matrix scheduling to the
+producer generator. A completed hosted cycle remains separate external evidence.
 
 ### 4. Runner provenance and conditional self-hosting bootstrap
 
@@ -1363,28 +1311,7 @@ compiles the current repository's pinned inputs, validates the complete committe
 embedded Plan, and compares every workflow/action byte and member path. The Environment digest and
 authored input paths remain fixed. Only Plan data, descriptive invocation data and their derived manifest
 may refresh. Changed scheduling, action templates or Environment policy fails before output and requires
-reviewed regeneration. By itself this does not resolve latest versions or alter pins.
-
-The separate opt-in `githubRuntimeSource` names one canonical HTTPS Git repository
-and `refs/heads/main`. Its nightly coordinator resolves that ref once and passes
-the full commit through the generated producer's `source_commit` dispatch input.
-The first bootstrap authenticates that held Git tree through the catalog pinning
-owner. It derives a final catalog overlay over each already-admitted stack,
-replacing source identity and rendering the declared version stamps for every
-source-built component from that repository, including inline overlay producers.
-Caller-provided hashes and raw JSON edits do not substitute for this resolution.
-External dependencies, acquisition pins, patches, toolchains and build commands
-retain their reviewed declarations. This mode tests the latest selected repository
-source; it does not claim an automatic refresh of its entire dependency inventory.
-
-The frozen Plan binds `runtimeSourceCommit`. Finalization reconstructs the same
-selection from authored inputs through the compiler and authenticated catalog
-revision, then compares the complete Plan. A different test-source revision,
-missing source policy, mixed NVKE commits or an unbound source input fails closed.
-The consumer checks out the existing Go tests at that exact frozen commit. No
-mutable ref is followed after the coordinator selection, and no production lock
-is updated by the nightly. The input is an explicit source selection, not permission
-to alter the reviewed workflow, signing policy or publication destination.
+reviewed regeneration. This does not resolve latest versions or silently alter pins.
 
 That bootstrap publishes the frozen data once as `nvkr-runtime-inputs`. Other native helper bootstraps
 depend on it and restore its three JSON files into a fresh staging directory. The generation owner admits

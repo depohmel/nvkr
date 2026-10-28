@@ -24,9 +24,6 @@ native disk and pipeline-attested stages with separate signer policy, credential
 registry namespaces. Cleanup admits only internal-visibility packages in those namespaces.
 Unsigned development remains static-unqualified. Neither setting grants production
 acceptance, provider access or qualified evidence.
-An explicit hosted runtime source policy freezes one selected repository commit
-for a Run without updating production catalog locks. The source identity affects
-its Builds; external dependencies and execution policy retain their reviewed inputs.
 _Avoid_: Delivery profile, component catalog, build identity
 
 **Run**:
@@ -294,14 +291,12 @@ Qualified release-gate acceptance is deferred; no retained clearance implementat
 _Avoid_: Generic pass result, cluster qualification
 
 **Downstream test coordinator**:
-A separately authored repository CI adapter outside the NVKR product lifecycle
-that joins exact project producer Runs, consumes authenticated publication bytes
-and invokes the existing native Go site lifecycle in a separate job. NVKE's
-source-built CLI and simulator perform installation and guest operations; NVKR's
-native owners drive smoke assertions, host admission, disk service and joined
-guest/backend/network cleanup. Default coverage is the real site API and Ready
-node, with optional tenant checks and separate local conformance. Its unsigned reports are diagnostics,
-not qualified conformance receipts or a seventh public lifecycle object (ADR-16/18).
+A separately authored repository CI workflow outside the NVKR product lifecycle.
+The nightly resolves one NVKE main commit and uses architecture matrix jobs to
+build and bootstrap locally through existing Go owners. Artifacts stay on the
+runner; VM, backend and network cleanup must join before success. Its unsigned
+outcomes are diagnostics, not release qualification or a seventh lifecycle object
+(ADR-16/18).
 _Avoid_: Nightly qualification, qualified runtime, product fleet operator
 
 **Clearance**:
@@ -375,7 +370,7 @@ _Avoid_: Execution admission, runtime proof, execution class, provider attestati
 An opaque, single-use, same-process capability binding the exact current Plan bytes and one selected VM build,
 its execution request and binding, cgroup-capped Linux host observations, and retained workspace/KVM handles.
 Capacity is re-observed inside the authored callback deadline immediately before work. It is current-availability
-authority reused by the local VM adapter and the explicitly admitted native ARC and hosted AMD64 disk routes, not provider allocation, resource reservation, qualification evidence,
+authority reused by the local VM adapter and the explicitly operator-trusted native ARC disk route, not provider allocation, resource reservation, qualification evidence,
 or proof that a subprocess consumed the held KVM descriptor.
 _Avoid_: Serialized receipt, hosted-runner attestation, resource reservation, KVM-consumption evidence
 

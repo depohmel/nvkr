@@ -46,18 +46,8 @@ producer dispatch and do not require another regeneration commit. The producer f
 all jobs; `run generate --runtime --check` validates its unchanged workflow/action and Environment
 contract without writing files. Changes to that contract require normal regeneration and review.
 
-The downstream nightly workflow owns executing the NVKE runtime suite. Definition validation and
-workflow generation establish neither runtime E2E success nor hardware acceptance. Runner capacity,
-toolchain access, source access and protected-environment policy require independent admission.
-
-`../../testing/nightly-profiles.json` selects this project's generated producer and exact NVKE suite revision.
-The coordinator checks supported native ARM64 runtime and OVN selections, authenticates the complete
-publication, and requires both test and cleanup verdicts. Checksum-pinned tool acquisition adds no
-vulnerability-clearance claim. The suite and all four site-product sources select
-`a8391755d12d99f859783c6cf390338debd1e085`, including its `^TestE2E$` runtime entrypoint
-selection and candidate-input fixes. This candidate comes from open NVKE PR #1580;
-it is not a merged-main or human-approval claim. The shared revision follows ADR-23's
-proposed matching-revision rule without establishing overall interface adoption.
-The [first scheduled attempt](https://github.com/dsx-ai-factory/nvkr/actions/runs/38676875690)
-failed during producer execution and skipped runtime tests. A successful combined
-cycle remains unrecorded; see the [nightly guide](../../../docs/nvke-nightly.md).
+This generated workflow remains a manually dispatched publication diagnostic.
+The scheduled [nightly Go test](../../../docs/nvke-nightly.md) builds latest NVKE
+main and bootstraps a site locally in each architecture job; it does not dispatch
+this producer or consume its publication. Definition validation and generation
+do not establish a successful build, VM runtime or hardware acceptance.

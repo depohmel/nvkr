@@ -22,7 +22,7 @@ func rejectUnsupportedNodeRequirements(node Node, adapter string) error {
 // helper a producer, disk observation, publication or signing route.
 func admitExecuteNodeRequirements(plan *Plan, nodeID string) error {
 	const adapter = "factory execute-node"
-	if plan.Qualification != TierStaticUnqualified || plan.Environment.GitHubARC != "" || plan.Environment.GitHubHostedKVM != "" ||
+	if plan.Qualification != TierStaticUnqualified || plan.Environment.GitHubARC != "" ||
 		plan.Environment.Publication != nil || plan.Environment.Signing != nil || !hasLocalVMBuild(plan) {
 		return admitGitHubRequirements(plan, adapter)
 	}

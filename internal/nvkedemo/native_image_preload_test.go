@@ -178,16 +178,18 @@ func TestNativeOVNProjectionUsesOnlyTheSelectedManifest(t *testing.T) {
 func TestNativeOVNArchiveRetainsTheExactObservedManifest(t *testing.T) {
 	for _, tc := range []struct {
 		name, arch, projection string
+		observedArch           string
 		wrongDigest            bool
 		existing               bool
 		valid                  bool
 	}{
-		{"selected", "arm64", "", false, false, true},
-		{"sibling observation", "arm64", "", true, false, false},
-		{"wrong platform", "amd64", "", false, false, false},
-		{"occupied destination", "arm64", "", false, true, false},
-		{"occupied projection", "arm64", "directory", false, false, false},
-		{"linked projection", "arm64", "symlink", false, false, false},
+		{"selected", "arm64", "", "arm64", false, false, true},
+		{"selected AMD64", "amd64", "", "amd64", false, false, true},
+		{"sibling observation", "arm64", "", "arm64", true, false, false},
+		{"wrong platform", "amd64", "", "arm64", false, false, false},
+		{"occupied destination", "arm64", "", "arm64", false, true, false},
+		{"occupied projection", "arm64", "directory", "arm64", false, false, false},
+		{"linked projection", "arm64", "symlink", "arm64", false, false, false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			run := t.TempDir()
@@ -263,7 +265,7 @@ func TestNativeOVNArchiveRetainsTheExactObservedManifest(t *testing.T) {
 				writeTenantFixture(t, filepath.Join(retained, "sentinel"), []byte("retain"), 0600)
 			}
 			reference := "localhost/nvke/ovn-kubernetes@" + observed
-			got, err := prepareNativeImage(t.Context(), nativeImageSelection{role: "ovn", root: run, output: "ovn-image-arm64", reference: reference, observed: lifecycle.Artifact{Digest: observed}}, work, files)
+			got, err := prepareNativeImage(t.Context(), nativeImageSelection{role: "ovn", root: run, output: "ovn-image-arm64", reference: reference, platform: "linux/" + tc.observedArch, observed: lifecycle.Artifact{Digest: observed}}, work, files)
 			if (err == nil) != tc.valid {
 				t.Fatalf("image projection: %v", err)
 			}
@@ -302,7 +304,7 @@ func TestNativeOVNArchiveRetainsTheExactObservedManifest(t *testing.T) {
 			if err := transportarchive.Unpack(t.Context(), got.File, restored, []string{"blobs", "index.json", "oci-layout"}); err != nil {
 				t.Fatal(err)
 			}
-			inspected, err := delivery.InspectContainerImage(t.Context(), restored, "linux/arm64")
+			inspected, err := delivery.InspectContainerImage(t.Context(), restored, "linux/"+tc.observedArch)
 			if err != nil || inspected.ManifestDigest != observed {
 				t.Fatalf("projected manifest: %v", err)
 			}
