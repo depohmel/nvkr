@@ -22,6 +22,7 @@ import (
 type nativeInstallerSelection struct {
 	repo, commit, capiVersion, versionsDigest, siteSpecDigest string
 	sourceDate                                                int64
+	arch                                                      string
 }
 
 func nativeInstallerSelectionFromRun(ctx context.Context, root, bundle string) (*nativeInstallerSelection, error) {

@@ -542,30 +542,52 @@ belong to Environment/profile configuration; component toolchains remain produce
 #### Repository NVKE E2E adapter outside generated execution
 
 The separately authored repository CI adapter uses `ubuntu-24.04` with `nvkr-release`
-for AMD64, and `arc-arm64-kvm` with `nvkr-arc` for ARM64, for kind management plus
-native KVM tenant guests. This engineering contract is
+for AMD64, and `arc-arm64-kvm` with `nvkr-arc` for ARM64, for the existing native
+Go site-VM lifecycle. A private temporary Lima backend runs kind for site
+bootstrap; it stops and joins before optional tenant provisioning. The permanent
+site controller and any selected tenant nodes are native KVM VMs. This engineering contract is
 outside generated Run execution and v1 product qualification acceptance; it adds
 no Environment runtime engine, public runtime API or qualified runner claim.
 The generated adapter's native disk policy above remains unchanged. Other labels
 and downstream runtime targets are unsupported by this E2E adapter.
 
-NVKE's existing local Go E2E tests own the assertions and requested guest/cluster
-lifecycle. NVKR owns artifact deployment, test configuration and launch, cleanup
-supervision, host admission, serialization, the disk service, outer leases,
+NVKR's scheduled Go test consumes the authenticated publication through its
+existing native asset, installer, guest and site owners, using the same native
+deployment and smoke checks as the opt-in local Go test. NVKE's source-built CLI
+and simulator own installation and guest operations. The default nightly checks
+the live site API and identified Ready node. Explicit tenant checks add real
+tenant readiness, per-node cloud-init, selected-image workload/DNS and exact
+KVM-domain observations; conformance remains a separate longer local opt-in.
+The scheduled path does not compile NVKE's separate controller E2E suite or
+rebuild published product components. All source-built NVKE outputs, including
+the authenticated installer source archive, bind to the one frozen latest-main
+commit; runtime requires no additional NVKE checkout.
+NVKR owns cleanup supervision, host admission, serialization, the disk service,
 network-control mutation and journaled restoration. It requires
 native architecture, KVM, host packages, exact source and private workspace before
 host mutation and joins both owners before reporting a successful cycle. Missing
 cleanup evidence retains recovery controls and fails the cycle.
 
-The pinned NVKE suite is fully trusted code. Its sudo and Docker access are
+The selected NVKE code and native runtime are fully trusted. Their sudo and runtime access are
 root-equivalent on the runner; running under the parent's UID means it can access
 the parent's read-only job token despite environment scrubbing. Private paths
 and separate workflow jobs do not establish an independent sandbox or signer.
-The suite's unsigned outcomes therefore remain diagnostics, including its own
+The test's unsigned outcomes therefore remain diagnostics, including its own
 pass verdict. A label, configured schedule or local contract test proves neither
 pool access nor combined runtime acceptance. Provider admission and the first
 combined cycle remain external evidence in reconciliation; no organizational
 tool approval or named-decider ratification is inferred.
+
+The AMD64 profile selects four vCPUs, 4 GiB for the site VM, 4 GiB per tenant VM
+and 1 GiB host/QEMU headroom. Capacity admission includes the larger bootstrap
+or tenant phase and the largest actual VM CPU allocation; sizing is projected
+into the simulator seed and checked against observed Linux domains. These
+configured budgets are not measured minima. ARM64's existing default sizing is
+unchanged. Linux uses the exact source-built Lima `f47461e` prerequisite with
+architecture-specific checksum-bound Ubuntu and nerdctl materials; the hosted
+AMD64 job provisions it while ARM64 operators supply the matched installation.
+The historical ARM64 backend-only pilot does not establish a complete nightly
+publication-to-runtime cycle.
 
 ### 4. Runner provenance and conditional self-hosting bootstrap
 

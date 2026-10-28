@@ -51,6 +51,9 @@ type NativeAssets struct {
 	RuntimeOutputs                         map[string]SelectedOutput
 	installerSelection                     *nativeInstallerSelection
 	identity                               *nativeIdentityAssets
+	arch                                   string
+	importTags                             map[string]string
+	publishedOutputs                       map[string]lifecycle.Artifact
 }
 
 type NativeImageAsset struct {
@@ -589,6 +592,14 @@ func extractNativeInstaller(ctx context.Context, archive, installer string, sele
 	}
 	checked := *selection
 	selection = &checked
+	arch := selection.arch
+	if arch == "" {
+		arch = "arm64"
+	}
+	if arch != "arm64" && arch != "amd64" {
+		return nil, errors.New("installer extraction requires an admitted native architecture")
+	}
+	releasePrefix := "controller/test/fixtures/releases/nvke-nico-vms-24.04-" + arch + "-fde-"
 	if err := safeExtractAssets(ctx, archive, installer, []string{
 		"SOURCE_COMMIT", "CAPI_VERSION", nativeSiteSpecPath, "make/tool-versions.mk", "deploy/nvke-deploy.sh", "deploy/lib/nvke-deploy-items.py",
 		"deploy/lib/render-template.py", "deploy/nico/nvke-deploy.yaml",
@@ -596,9 +607,9 @@ func extractNativeInstaller(ctx context.Context, archive, installer string, sele
 		"controller/deploy/charts/controller/Chart.yaml", "nktp/deploy/charts/nktp/Chart.yaml",
 		"controller/nico-sim/internal/seed/default-seed.yaml", "controller/nico-sim/ui/index.html",
 		"controller/deploy/k8s/capi-spiffe-exec-auth/capi-controller-manager.yaml",
-		"controller/test/fixtures/releases/nvke-nico-vms-24.04-arm64-fde-machineimage.yaml",
-		"controller/test/fixtures/releases/nvke-nico-vms-24.04-arm64-fde-clusterrelease.yaml",
-		"controller/test/fixtures/releases/nvke-nico-vms-24.04-arm64-fde-nodepoolrelease.yaml",
+		releasePrefix + "machineimage.yaml",
+		releasePrefix + "clusterrelease.yaml",
+		releasePrefix + "nodepoolrelease.yaml",
 	}); err != nil {
 		return nil, err
 	}

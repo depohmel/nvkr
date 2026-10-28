@@ -296,9 +296,11 @@ _Avoid_: Generic pass result, cluster qualification
 **Downstream test coordinator**:
 A separately authored repository CI adapter outside the NVKR product lifecycle
 that joins exact project producer Runs, consumes authenticated publication bytes
-and invokes NVKE's suite in a separate job. NVKE owns guest/cluster provisioning,
-assertions and teardown; the parent harness owns host admission, outer leases,
-disk service and network-control restoration. Its unsigned reports are diagnostics,
+and invokes the existing native Go site lifecycle in a separate job. NVKE's
+source-built CLI and simulator perform installation and guest operations; NVKR's
+native owners drive smoke assertions, host admission, disk service and joined
+guest/backend/network cleanup. Default coverage is the real site API and Ready
+node, with optional tenant checks and separate local conformance. Its unsigned reports are diagnostics,
 not qualified conformance receipts or a seventh public lifecycle object (ADR-16/18).
 _Avoid_: Nightly qualification, qualified runtime, product fleet operator
 

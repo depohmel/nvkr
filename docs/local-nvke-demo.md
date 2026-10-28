@@ -653,28 +653,47 @@ Cross-process automatic Packer orphan recovery is not implemented.
 
 ## Repeat through the opt-in native E2E test
 
-`TestEndToEnd` invokes the normal `bin/nvke-demo e2e` CLI with fresh paths,
-NVIDIA OVN, conformance and cleanup on native Mac/Ubuntu ARM64. Both hosts use
-the 14-hour wrapper budget, including two hours beyond the CLI work deadline.
-Ordinary tests skip this real build/deployment operation.
-The binary and checkout must come from the same reviewed source revision.
+`TestEndToEnd` calls the existing Go build and native-site owners with fresh
+paths on native Mac/Ubuntu ARM64. By default it builds the ordinary NVIDIA OVN
+artifact set, bootstraps the site into a real VM, then runs a Go `site` subtest
+that checks Kubernetes API readiness and the site's single Ready node. It
+does not create a tenant or run conformance unless explicitly selected.
+NVKE owns the temporary bootstrap Kind cluster; the native owner removes it
+before the site subtest runs. The site controller runs in the site VM.
+Ordinary tests skip this real build/deployment operation. The helper binary
+and NVKR checkout must come from the same reviewed source revision.
 
 ```sh
 export NVKR_NVKE_E2E=1
 export NVKR_NVKE_E2E_REPO="$(pwd -P)"
 export NVKR_NVKE_E2E_OUT="$PWD/.nvkr/native-test-01"
 export NVKR_NVKE_E2E_ATTEMPT=native-test-01
-# Optional: NVKR_NVKE_E2E_BINARY selects the same-revision CLI at another path.
-GOTOOLCHAIN=local go test ./internal/nvkedemo -run '^TestEndToEnd$' -count=1 -timeout 16h
+# Optional: NVKR_NVKE_E2E_BINARY selects the same-revision native helper binary.
+GOTOOLCHAIN=local go test ./internal/nvkedemo -run '^TestEndToEnd$' -count=1 -timeout 10h
 ```
 
-This test launches the CLI non-interactively. It cannot accept sudo passwords;
-Linux requires the documented unattended administrator policy, not a temporary
-`sudo -v` cache. Mac still requires its installed native/vmnet prerequisites.
-The test wrapper leaves two hours beyond the CLI's own work deadline for
-independently bounded diagnostics and joined cleanup.
-Its normal CLI invocation is test wiring, not evidence that a fresh complete
-Mac or Ubuntu invocation has passed.
+Set `NVKR_NVKE_E2E_TENANT=1` to add tenant provisioning, node/cloud-init checks
+and the existing workload/DNS checks. Set `NVKR_NVKE_E2E_CONFORMANCE=1` to select
+the matching conformance artifacts before building and run full conformance on
+that tenant; this also enables tenant creation. Use `-timeout 14h` for conformance.
+The three E2E switches accept only unset, `0` or `1`.
+
+The test uses `BuildArtifacts` and `WithNativeSite` directly, rather than
+launching the demo's `e2e` command. `NVKR_NVKE_E2E_BINARY` retains its default
+`bin/nvke-demo` path for existing native privilege/QEMU helpers and, on Mac,
+locating the adjacent `nvkr` distribution. NVKR's existing build commands and
+NVKE's bootstrap/deployment commands still own their work. The default local
+inputs use their committed source pins; `NVKE_LOCAL_CLONE` supplies Git objects
+for those pins and does not select a newer NVKE revision.
+
+The test cannot accept sudo passwords. Linux requires the documented unattended
+administrator policy; Mac requires its installed native/vmnet prerequisites.
+Work is bounded to eight hours ordinarily or twelve with conformance, shortened
+when needed to leave two hours before the Go test deadline for independent
+diagnostics and joined cleanup. Scope exit cleans up the owned site and tenant,
+and cleanup failures fail the parent test after the owner returns.
+These are execution budgets, not measured build/runtime estimates. A fresh
+complete Mac or Ubuntu invocation of this direct Go test remains unverified.
 
 ### Reuse a native site from Go tests
 

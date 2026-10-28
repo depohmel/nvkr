@@ -51,6 +51,7 @@ printf '%s' {{quote (spireEnvironment .)}} > /etc/nke/spire.env
 {{configureSpire}}
 {{range $role, $reference := .ImageImports}}
 {{importImage (printf "downloads/%s.tar" $role) $reference}}
+{{tagImage $role $reference}}
 {{end}}
 {{prepareOVN}}
 systemctl start --no-block spire-agent.service nvke-agent.service

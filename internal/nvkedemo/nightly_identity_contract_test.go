@@ -28,7 +28,7 @@ import (
 )
 
 func nightlyIdentityFixture() (NightlyProfile, NightlyBuild) {
-	profile := NightlyProfile{Name: "nightly-fixture", Bundle: "nightly-fixture", Definition: "definitions/nightly-fixture/definition.json", Environment: "definitions/nightly-fixture/environment-github.json", Plan: ".github/nvkr-run-nightly-fixture/plan.json", BuildWorkflow: "nvkr-run-nightly-fixture.yml", RuntimeTarget: "native-arm64-vm", Network: "ovn", DiskOutput: "disk", ProfilesOutput: "profiles", OSProfile: "os", KubernetesVersion: "v1.36.0", LabelFilter: "nightly"}
+	profile := NightlyProfile{Name: "nightly-fixture", Bundle: "nightly-fixture", Definition: "definitions/nightly-fixture/definition.json", Environment: "definitions/nightly-fixture/environment-github.json", Plan: ".github/nvkr-run-nightly-fixture/plan.json", BuildWorkflow: "nvkr-run-nightly-fixture.yml", RuntimeTarget: "native-arm64-vm", Network: "ovn", DiskOutput: "disk", ProfilesOutput: "profiles"}
 	build := NightlyBuild{Profile: profile, CoordinatorRun: "100", CoordinatorAttempt: "2", ProducerRun: 200, ProducerAttempt: 1, SourceCommit: strings.Repeat("b", 40), NVKECommit: strings.Repeat("d", 40), ProducerURL: "https://github.com/example/nvkr/actions/runs/200", Trust: "github-run-facts; publication-not-yet-verified"}
 	return profile, build
 }

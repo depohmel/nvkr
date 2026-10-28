@@ -1943,9 +1943,10 @@ unreviewed renames, unsafe metadata, exact path/version
 checks and unchanged external selections; they do not establish installation or fresh runtime acceptance.
 The native runtime-image variant
 keeps its separately authenticated images and binds their selection to the same NVKE
-source. Mac and Linux tools share the same NVKE source pins. Maintained release,
-native demo and nightly product-build selections use this release; the independently
-pinned nightly test harnesses retain their separate source exception. Selection grants
+source. Mac and Linux local tools share the same NVKE source pins. Maintained release
+and local native-demo selections retain this reviewed baseline. The separate nightly
+now resolves NVKE main once for both product and installer source, without an
+independent test-harness exception. Selection grants
 no Release authority; prior failed Runs remain failed.
 
 The private Ubuntu attempt `ubuntu-9905-e2e-02` used consumer
@@ -2975,15 +2976,17 @@ the standard runner is insufficient. Build and E2E resource consumption need sep
 if those establish a need for a larger runner, its provider mapping requires review. No arbitrary
 larger label or currently provisioned larger hosted runner is inferred.
 
-The AMD64 nightly selects this route for its complete 29-output producer and uses
+The AMD64 nightly selects this route for its complete 34-output producer and uses
 the same generic hosted label for authenticated candidate consumption. The ARM64
-route retains its ARC runner and fixed resource policy. AMD64 disk admission selects
+route retains its ARC runner and default native guest sizing. AMD64 disk admission selects
 4 CPUs, 10 GiB memory and 64 GiB scratch through its exact overlay and matching
 Environment; these are authored limits, not empirically established minima. Its
-NVKR-owned setup adapter uses an explicit hosted AMD64 observation policy rather
-than the unsupported 24/90 GiB runtime floors. Both runtime architectures compile
-the existing local Go E2E tests at the same frozen NVKE main commit used by their
-producers. There is no separate NVKE PR or test-source revision dependency.
+NVKR-owned native runtime uses an explicit four-vCPU, 4 GiB site/tenant guest
+shape with 1 GiB host/QEMU headroom, including the larger bootstrap or tenant
+phase in admission. This is a configured trial budget, not a measured minimum.
+Both runtime architectures invoke the existing native Go site lifecycle using
+authenticated artifacts and installer source from the same frozen NVKE main
+commit. There is no separate NVKE PR or test-source revision dependency.
 Native KVM, publication authentication and owned cleanup remain required.
 
 [Source-built workload Run 40578231640](https://github.com/depohmel/nvkr/actions/runs/40578231640)
@@ -3359,8 +3362,9 @@ uses the held publication directly rather than adding another command interface.
 The standalone input-staging command and compile-only adapter are removed.
 The [NVKE nightly coordinator](../nvke-nightly.md) instead declares scheduled and
 manual GitHub execution: complete project producer, exact run correlation,
-authenticated publication handoff, existing NVKE Go tests on kind plus real KVM
-guests, and separate test/resource-cleanup verdicts. This is downstream repository
+authenticated publication handoff, direct native Go smoke against a real KVM
+site-controller VM, and joined resource cleanup. Temporary kind/Lima bootstrap
+is stopped before optional tenant provisioning. This is downstream repository
 CI infrastructure outside the NVKR product lifecycle and v1 acceptance. ADR-16
 retains the passive external-conformance boundary; ADR-18 §3 records the adapter's
 native runner and trust limits, not a new product runtime engine or ratified decision.
@@ -3377,9 +3381,10 @@ the default qualifier's `workflow_run` selection; default/development display na
 and all workflow paths are preserved. Those contracts do not prove hosted
 execution, complete crash recovery or acceptance of scheduled downstream tests.
 
-NVKE owns guest/cluster provisioning, assertions and teardown. The parent harness
-owns host admission, serialization, outer leases, the disk service and journaled
-network-control restoration. Successful cycles require both owners' cleanup;
+NVKE's source-built CLI and simulator perform installation and guest operations.
+NVKR's existing native Go owners drive deployment, assertions, host admission,
+serialization, the disk service and journaled network-control restoration.
+Successful cycles require joined guest, backend and host cleanup;
 missing cleanup evidence retains private recovery controls. NVKE runs as fully
 trusted pinned code with sudo and Docker access under the parent's UID, including
 root-equivalent access to its read-only job token. Environment scrubbing is not
@@ -3408,14 +3413,36 @@ component, including complete disk-overlay replacements, OS materials, profiles
 and simulator. External dependency and acquisition pins retain the reviewed
 baseline. The runtime Plan records the same commit; finalization recompiles the
 selection, and the runtime consumer rejects mixed-source builds before launching
-the local Go suite from that commit. The committed v0.22.0 locks remain a baseline
+the native Go lifecycle with that commit's authenticated installer and tools.
+The committed v0.22.0 locks remain a baseline
 and are not nightly source selection or mutated by the coordinator.
-The nightly consumer projects authenticated profile bytes into the current resource
-API and supplies separate site and stack configuration, credentials through the child
-environment, and telemetry through the installer values handoff. Both the normal and upstream-OVN
-disk URLs, where required by the selected profile, read the same held disk and are
-checked against the exact selected Artifact. Focused contract and HTTP race tests
-passed for the preceding beta selection, and that CLI validated and rendered the diagnostic site spec. Those earlier checks do not validate the latest-main runtime.
+The nightly consumer exports the held publication through existing delivery and
+native asset owners. Its site VM runs the same bootstrap and smoke path as the
+opt-in local Go test: live API `/readyz` and exactly one identified Ready node.
+Default nightly coverage is site smoke and cleanup; explicit `tenant_checks`
+selects `NVKR_NIGHTLY_TENANT=1` for real tenant nodes, per-node cloud-init,
+selected-image workload/DNS and exact KVM/TPM/CPU/backing-image observations.
+Conformance remains a longer local opt-in, not the scheduled default. The local
+ARM64 `TestEndToEnd` builds fresh artifacts from its reviewed baseline; nightly
+instead consumes the authenticated same-main publication. These paths share
+native deployment and smoke owners, not an independently authored runtime.
+AMD64 configures four vCPUs, a 4 GiB site VM, 4 GiB tenant VMs and 1 GiB headroom;
+ARM64 defaults remain unchanged. Resource values reach both seed rows,
+simulator parameters, host admission and Linux VM observations. Linux requires
+the exact Lima `f47461e` installation and checksum-bound native Ubuntu/nerdctl
+materials; AMD64 provisions the pinned upstream source and ARM64 requires a
+matched installation. Focused architecture, resource, source-tag readback,
+cloud-init, workload and cleanup contracts passed locally; no complete new
+publication-to-native-runtime cycle is recorded here.
+The current 34-output AMD64 and ARM64 Plans were separately compiled and exactly
+rechecked with every source-built NVKE component frozen to
+`ad7450e74425e3643caa6dce1edb3203935c29e3`. A Linux source-only contract also
+executed both actual installer-archive producer commands from that Git revision,
+then passed the existing bounded extraction, source-selected Kubernetes/CAPI
+version and four CAPI image-overlay checks. It found and corrected the new
+nightly catalogs' CAPI init-image acquisition to the exact source-selected
+Alpine parent. Independent workload-image acquisition pins remain unchanged.
+These checks published no products and booted no VM.
 An earlier test-only suite pin, `b4f90e2c4fc4ed3d07efc18a22066a7e0b9b99c8`,
 used beta.6 deployment templates and an explicit stack-config/credential/telemetry
 handoff. It is no longer the maintained nightly test selection. Its
@@ -3428,16 +3455,12 @@ is covered separately by the shell-versus-Go parity test in the successful
 [Merge Gate on `caf85b27`](https://github.com/dsx-ai-factory/nvkr/actions/runs/39487820535).
 This verifies configuration composition, not published-artifact or VM
 runtime acceptance; full runtime validation of the current selection remains unverified.
-The current NVKR adapter requires the selected checkout's stock Go E2E tests,
-backend helpers and deployment inputs. It does not require the earlier candidate
-shell hook, modify NVKE source, rebuild product components during testing or
-download an OS tag as a fallback. Stock release-name aliases are annotated as
-diagnostic bindings to the authenticated plain disk; their historical `fde` name
-does not establish FDE coverage. Source fixture metadata registers test cases and
-is never installed as candidate content. A completed publication-to-runtime run
-of this latest-main path remains required; the earlier configuration-only result
-does not exercise it.
-Local checks against NVKE `ad7450e74425e3643caa6dce1edb3203935c29e3`
+The current native adapter does not compile NVKE's separate controller E2E
+suite or use the prior kind-management candidate shell lane. It does not modify
+NVKE source, rebuild published product components during testing or download an
+OS tag as a fallback. A completed publication-to-native-runtime run remains
+required; the earlier configuration-only result does not exercise it.
+Earlier adapter checks against NVKE `ad7450e74425e3643caa6dce1edb3203935c29e3`
 compiled its CLI and unchanged Go E2E suite, selected 12 OVN/health specs in a dry
 run, and passed the actual site-spec/render handoff, stock chart authentication
 configuration and authenticated-seed projection contract. Both complete

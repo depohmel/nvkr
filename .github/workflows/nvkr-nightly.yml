@@ -9,11 +9,15 @@ name: NVKR nightly NVKE end-to-end tests
   workflow_dispatch:
     inputs:
       source_contract_only:
-        description: Validate the pinned nightly handoff without builds or VM deployment
+        description: Compile the selected source and check native installer inputs without product builds or VM deployment
         type: boolean
         default: false
       hosted_preflight_only:
         description: Probe native KVM on the standard GitHub-hosted AMD64 runner without product artifacts
+        type: boolean
+        default: false
+      tenant_checks:
+        description: Also create a tenant and check its workload and DNS after the site smoke test
         type: boolean
         default: false
       profile:
@@ -134,7 +138,7 @@ jobs:
         with:
           go-version-file: .go-version
           cache: false
-      - name: Compile and check the same-revision NVKE handoff
+      - name: Compile the selected NVKE CLI and check native installer sources
         env:
           GOTOOLCHAIN: local
           GOENV: 'off'
@@ -148,9 +152,7 @@ jobs:
           go build -o "$RUNNER_TEMP/nvkectl-nightly" ./cmd/nvkectl
           cd "$root"
           NVKR_NVKE_SOURCE_CONTRACT="$root/.nvkr/source-contract/nvke" \
-          NVKR_NVKE_SOURCE_CLI="$RUNNER_TEMP/nvkectl-nightly" \
-          NVKR_NVKE_NIGHTLY_SOURCE_CONTRACT="$root/.nvkr/source-contract/nvke" \
-            go test ./internal/nvkedemo -run '^TestNightly(Beta(Site|.*Handoff)|SeedCurrentSourceContract)' -count=1 -timeout=5m
+            go test ./internal/nvkedemo -run '^TestNativeNightlyCurrentSourceContract$' -count=1 -timeout=5m
           cd "$root/.nvkr/source-contract/nvke/controller/test/e2e"
           go test . -run '^TestUnit_' -count=1 -timeout=10m
 
@@ -309,6 +311,12 @@ jobs:
       max-parallel: 1
       matrix: ${{ fromJSON(needs.select-runtime.outputs.matrix) }}
     steps:
+      - name: Bound the Go test by this job's remaining lifetime
+        run: |
+          set -euo pipefail
+          # Leave five minutes for the verdict check and metadata upload after
+          # Go has joined its independent native-resource cleanup.
+          printf 'NVKR_NIGHTLY_JOB_DEADLINE_EPOCH=%s\n' "$(( $(date +%s) + 355 * 60 ))" >> "$GITHUB_ENV"
       - name: Check out the exact coordinator source
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
@@ -329,7 +337,8 @@ jobs:
           sudo -n timeout --kill-after=10s 600s apt-get -o Acquire::Retries=2 -o Acquire::http::Timeout=30 \
             install --no-install-recommends -y qemu-system-x86 qemu-utils ovmf libvirt-daemon-system \
             libvirt-clients cloud-image-utils genisoimage dnsmasq-base iptables ethtool \
-            build-essential libcap2-bin swtpm swtpm-tools e2fsprogs sshpass
+            build-essential libcap2-bin swtpm swtpm-tools e2fsprogs sshpass \
+            gnutls-bin ipxe-qemu openssh-client
           sudo -n chmod 0666 /dev/kvm
           sudo -n systemctl start libvirtd
           sudo -n install -d -m 0700 -o "$(id -u)" -g "$(id -g)" "/run/user/$(id -u)"
@@ -338,6 +347,31 @@ jobs:
             key=${setting%=*} floor=${setting#*=}
             if (( $(sysctl -n "$key") < floor )); then sudo -n sysctl -w "$setting"; fi
           done
+      - name: Build the pinned temporary bootstrap backend from source
+        if: matrix.runtime_target == 'native-amd64-vm'
+        timeout-minutes: 20
+        env:
+          GOTOOLCHAIN: local
+          GOENV: 'off'
+          GOWORK: 'off'
+        run: |
+          set -euo pipefail
+          umask 077
+          source="$RUNNER_TEMP/nightly-lima-source"
+          prefix="$RUNNER_TEMP/nightly-lima"
+          test ! -e "$source" && test ! -L "$source"
+          test ! -e "$prefix" && test ! -L "$prefix"
+          git init "$source"
+          git -C "$source" remote add origin https://github.com/lima-vm/lima.git
+          timeout --kill-after=10s 180s git -C "$source" fetch --depth=1 origin f47461ed7d03f300297e01fd659e9aefc6c228b9
+          git -C "$source" checkout --detach FETCH_HEAD
+          test "$(git -C "$source" rev-parse HEAD)" = f47461ed7d03f300297e01fd659e9aefc6c228b9
+          test "$(git -C "$source" rev-parse 'HEAD^{tree}')" = 525cd5017b050291ab824892d624bbbacf7f8e7e
+          timeout --kill-after=30s 900s make -C "$source" native documentation install PREFIX="$prefix"
+          install -m 0644 "$source/NOTICE" "$prefix/share/doc/lima/NOTICE"
+          test "$("$prefix/bin/limactl" --version)" = 'limactl version f47461e'
+          test -x "$prefix/bin/nerdctl.lima"
+          printf '%s\n' "$prefix/bin" >> "$GITHUB_PATH"
       - name: Build the existing network privilege probe
         env:
           GOTOOLCHAIN: local
@@ -357,7 +391,8 @@ jobs:
           fi
           for tool in bash git gh jq curl timeout sha256sum docker sudo qemu-img \
             "$qemu" cloud-localds virsh ip iptables dnsmasq setcap getcap ps sysctl \
-            swtpm flock setsid openssl ss make awk df sort seq; do
+            swtpm swtpm_setup flock setsid openssl ss make awk df sort seq \
+            limactl nerdctl.lima; do
             command -v "$tool" >/dev/null || { echo "::error::Missing native host prerequisite: $tool"; exit 1; }
           done
           test -c /dev/kvm && test -r /dev/kvm && test -w /dev/kvm
@@ -411,7 +446,7 @@ jobs:
           run-id: ${{ steps.candidate.outputs.producer_run }}
           attempt: '1'
           path: .nightly-private/runtime-inputs
-      - name: Select the suite revision from the frozen product sources
+      - name: Check the frozen NVKE source cohort before runtime
         id: suite
         env:
           RUNTIME_PLAN: ${{ steps.candidate.outputs.runtime_plan }}
@@ -448,15 +483,6 @@ jobs:
             ' .nightly-private/runtime-inputs/plan.json)
           [[ "$suite" =~ ^[0-9a-f]{40}$ ]]
           printf 'commit=%s\n' "$suite" >> "$GITHUB_OUTPUT"
-      - name: Check out the pinned NVKE end-to-end suite
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
-        with:
-          repository: dsx-ai-factory/nvke
-          ref: ${{ steps.suite.outputs.commit }}
-          token: ${{ secrets.NKE_SOURCE_TOKEN }}
-          path: .nightly-private/nvke
-          fetch-depth: 1
-          persist-credentials: false
       - name: Fetch and check the independent native verifier
         run: |
           set -euo pipefail
@@ -471,20 +497,20 @@ jobs:
           chmod 0500 "$destination/cosign"
           printf 'NVKR_NIGHTLY_COSIGN=%s\n' "$destination/cosign" >> "$GITHUB_ENV"
           printf 'NVKR_NIGHTLY_COSIGN_DIGEST=sha256:%s\n' "$COSIGN_DIGEST" >> "$GITHUB_ENV"
-      - name: Authenticate the publication and run the existing NVKE Go suite
+      - name: Authenticate the publication and run the NVKR Go VM smoke test
         env:
           GOTOOLCHAIN: local
           GH_TOKEN: ${{ github.token }}
           NVKR_REGISTRY_READ: ${{ secrets.NVKR_REGISTRY_READ }}
           NVKR_REGISTRY_READ_USER: ${{ vars.NVKR_REGISTRY_READ_USER }}
           NVKR_NIGHTLY_ENABLE: '1'
+          NVKR_NIGHTLY_TENANT: ${{ inputs.tenant_checks && '1' || '0' }}
           NVKR_CI_STORAGE_TOKEN: ${{ secrets.NVKR_CI_STORAGE_READ_TOKEN }}
           NVKR_CI_STORAGE_USER: ${{ vars.NVKR_CI_STORAGE_READ_USER }}
           NVKR_NIGHTLY_PROFILE: ${{ matrix.name }}
           NVKR_NVKE_SOURCE_COMMIT: ${{ matrix.nvke_commit }}
           NVKR_NIGHTLY_PROFILES: ${{ github.workspace }}/inputs/testing/nightly-profiles.json
           NVKR_NIGHTLY_BUILD: ${{ github.workspace }}/.nightly-private/build/build.json
-          NVKR_NIGHTLY_SOURCE: ${{ github.workspace }}/.nightly-private/nvke
           NVKR_NIGHTLY_NETWORK_HELPER: ${{ github.workspace }}/bin/nvke-demo
           NVKR_NIGHTLY_WORKSPACE: ${{ runner.temp }}/nightly-candidate-${{ matrix.name }}
           NVKR_NIGHTLY_REPORTS: ${{ runner.temp }}/nightly-reports-${{ matrix.name }}
@@ -492,7 +518,10 @@ jobs:
           set -euo pipefail
           go test ./internal/nvkedemo -list '^TestNightlyPublishedCandidate$' \
             | grep -Fx TestNightlyPublishedCandidate
-          go test ./internal/nvkedemo -run '^TestNightlyPublishedCandidate$' -timeout 330m -count=1 -v
+          [[ "$NVKR_NIGHTLY_JOB_DEADLINE_EPOCH" =~ ^[0-9]+$ ]]
+          remaining=$(( NVKR_NIGHTLY_JOB_DEADLINE_EPOCH - $(date +%s) ))
+          (( remaining > 0 ))
+          go test ./internal/nvkedemo -run '^TestNightlyPublishedCandidate$' -timeout "${remaining}s" -count=1 -v
           jq -e --arg profile "$NVKR_NIGHTLY_PROFILE" --arg run "$GITHUB_RUN_ID" \
             --arg attempt "$GITHUB_RUN_ATTEMPT" --arg sha "$GITHUB_SHA" --arg nvke "$NVKR_NVKE_SOURCE_COMMIT" '
             .profile == $profile and .phase == "runtime" and .runtimePassed == true and

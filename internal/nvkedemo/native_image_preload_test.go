@@ -135,13 +135,28 @@ func TestNativeOVNProjectionUsesOnlyTheSelectedManifest(t *testing.T) {
 				t.Fatal(err)
 			}
 			global := values["global"].(map[string]any)
-			image := global["image"].(map[string]any)
 			if version == siteOVNVersion {
-				if global["useImageDigest"] != true || global["skipCallToK8s"] != false || global["enablePodHostPort"] != true || global["imagePullSecretName"] != "" || image["repository"] != "localhost/nvke/ovn-kubernetes" || image["tag"] != "nvkr" || image["sha256"] != strings.TrimPrefix(digest, "sha256:") {
+				if global["image"] != nil || global["useImageDigest"] != true || global["skipCallToK8s"] != false || global["enablePodHostPort"] != true || global["imagePullSecretName"] != "" {
 					t.Fatal("NVIDIA native OVN projection lost exact image, Service lookup or hostPort support")
 				}
-			} else if global["enablePodHostPort"] != nil || global["enableOvnKubeIdentity"] != false || values["skipCallToK8s"] != true || image["repository"] != "localhost/nvke/ovn-kubernetes@sha256" || image["tag"] != strings.TrimPrefix(digest, "sha256:") || image["pullPolicy"] != "IfNotPresent" {
-				t.Fatal("upstream image override used the NVIDIA schema")
+				for _, binding := range []struct{ component, workload string }{
+					{"ovnkube-control-plane", "ovnkubeControlPlane"},
+					{"ovnkube-single-node-zone", "ovnkubeSingleNodeZone"},
+					{"ovnkube-single-node-zone", "ovnkubeSingleNodeZoneNbdb"},
+					{"ovnkube-single-node-zone", "ovnkubeSingleNodeZoneSbdb"},
+					{"ovnkube-single-node-zone", "ovnkubeSingleNodeZoneNorthd"},
+					{"ovnkube-single-node-zone", "ovnkubeSingleNodeZoneOvnHost"},
+				} {
+					image := values[binding.component].(map[string]any)[binding.workload].(map[string]any)["image"].(map[string]any)
+					if image["repository"] != "localhost/nvke/ovn-kubernetes" || image["tag"] != "nvkr" || image["sha256"] != strings.TrimPrefix(digest, "sha256:") {
+						t.Fatalf("chart image binding %s.%s differs from selected manifest", binding.component, binding.workload)
+					}
+				}
+			} else {
+				image := global["image"].(map[string]any)
+				if global["enablePodHostPort"] != nil || global["enableOvnKubeIdentity"] != false || values["skipCallToK8s"] != true || image["repository"] != "localhost/nvke/ovn-kubernetes@sha256" || image["tag"] != strings.TrimPrefix(digest, "sha256:") || image["pullPolicy"] != "IfNotPresent" {
+					t.Fatal("upstream image override used the NVIDIA schema")
+				}
 			}
 			script, err := nativeImageImportScript("ovn.tar", reference)
 			if err != nil || !strings.Contains(script, "--digests --base-name "+operatorQuote("localhost/nvke/ovn-kubernetes")) || !strings.Contains(script, "inspecti --quiet "+operatorQuote(reference)) {

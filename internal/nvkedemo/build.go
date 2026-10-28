@@ -83,9 +83,14 @@ func buildArtifacts(ctx context.Context, cfg BuildConfig) (BuiltInputs, error) {
 	}
 	nativeDefault := false
 	if runtime.GOOS == "darwin" && cfg.Definition == "" {
-		executable, err := os.Executable()
-		if err != nil {
-			return BuiltInputs{}, nvkrerr.Wrap(nvkrerr.CodeEngineCapability, err, "select native NVKR distribution")
+		executable := cfg.DemoExecutable
+		if executable == "" {
+			executable, err = os.Executable()
+			if err != nil {
+				return BuiltInputs{}, nvkrerr.Wrap(nvkrerr.CodeEngineCapability, err, "select native NVKR distribution")
+			}
+		} else if !filepath.IsAbs(executable) || filepath.Clean(executable) != executable {
+			return BuiltInputs{}, configUsage("native distribution executable requires an absolute clean path")
 		}
 		nativeDefault, err = defaultMacBuild(&cfg, runtime.GOOS+"/"+runtime.GOARCH, executable)
 		if err != nil {

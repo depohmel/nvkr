@@ -2,9 +2,10 @@
 
 The requested flow is a scheduled GitHub Actions pipeline: resolve the latest
 NVKE `main` once, freeze that exact commit, build and publish a complete candidate
-with NVKR, authenticate that publication, then run the same commit's local Go E2E
-tests against the built artifacts. The first runtime target uses kind as management and real
-KVM guests as tenant nodes on native Linux. AMD64 uses the standard GitHub-hosted
+with NVKR, authenticate that publication, then exercise those artifacts through
+NVKR's existing native Go site lifecycle. A temporary kind cluster inside the
+owned Lima backend bootstraps the permanent site-controller KVM VM; that backend
+is stopped and joined before optional tenant creation. AMD64 uses the standard GitHub-hosted
 `ubuntu-24.04` runner; ARM64 retains `arc-arm64-kvm`. Local describes the test
 environment; GitHub Actions schedules and executes the entire cycle.
 
@@ -12,7 +13,7 @@ The coordinator is `.github/workflows/nvkr-nightly.yml`, with a daily 03:17 UTC
 schedule and manual dispatch. `inputs/testing/nightly-profiles.json` selects the
 project Definitions, named generated producer workflows and runtime profiles.
 The coordinator passes one exact NVKE commit to both architectures; a separate
-test-source revision cannot override it. Each project selects its complete output set. The
+test-source revision cannot override it. Each project selects its complete 34-output set. The
 ordinary generated M2 workflow retains its default paths; named bundles use the
 existing generator and manifest owner. The coordinator is authored separately.
 The daily trigger selects NVIDIA-fork OVN for AMD64 and ARM64, including manual `all` dispatches.
@@ -82,39 +83,58 @@ zero failed, one selected multi-CIDR spec skipped, in about 61 minutes overall.
 It used the nightly guest shape and uploaded no Actions artifacts. Sampled disk
 headroom fell to 373 MiB and swap was nearly full. This establishes one successful
 source workload, not the full authenticated candidate path or a measured minimum.
-The AMD64 candidate uses an explicit hosted observation policy; the ARM64 fixed
-resource policy remains unchanged. Neither a probe nor a label proves full-nightly acceptance.
+The current AMD64 native profile configures four vCPUs, 4 GiB for the site VM,
+4 GiB per tenant VM and 1 GiB host/QEMU headroom. Admission includes the larger
+of the temporary 6 GiB bootstrap backend and the selected tenant phase; a
+one-control-plane/one-worker tenant shape requires 13 GiB available memory.
+These are configured budgets for a real trial, not measured workload minima.
+ARM64 retains the default six-vCPU, 12 GiB site and tenant sizing with 4 GiB
+headroom. Neither a probe nor a label proves full-nightly acceptance.
 
 The maintained nightly profiles select NVIDIA-fork OVN AMD64 and ARM64 candidates
-for kind management plus real KVM tenant VMs. Selection validates the maintained
-profile, exact suite revision, native runtime target and network. There is no
+for the native site-VM lifecycle. Selection validates the maintained
+profile, exact NVKE source revision, native runtime target and network. There is no
 self-declared security approval field. Artifact authentication, source matching,
 native-host preflight and owned-resource cleanup remain required.
 
 The committed catalogs remain the reviewed build-command and dependency baseline.
 They do not choose the nightly NVKE revision: the dispatch's frozen main commit
 does. The runtime consumer requires every source-built NVKE component to match
-`nvkeCommit` and checks out the Go suite at that same SHA. No separate NVKE PR or
-candidate-only source branch is required. Clusterctl and other external tools
+`nvkeCommit`. Installer sources and source-built tools come from the authenticated publication at the
+same commit. No separate NVKE PR or candidate-only source branch is required. Clusterctl and other external tools
 retain their catalog pins; compatibility with a future main commit is tested,
-not assumed.
+not assumed. The separate manual `source_contract_only` diagnostic may check out
+the frozen source for contract tests; the runtime consumes its authenticated
+installer archive without an additional NVKE checkout.
 
-The adapter validates authenticated profile bytes and the exact selected disk through the
-same profile projection as the local tenant flow, then emits `MachineImage`, `ClusterRelease`
-and `NodePoolRelease` resources under `internal.nvke.nvidia.com/v1`. It preserves the full
-disk digest, boot script and user-data template, retaining the candidate suite's fixed profile
-name in its fresh management cluster. No source profile-converter executable is required.
-The site specification uses the current `cluster` and `controllerStack` shape with private
-credentials. These adapter paths have contract tests; they have no recorded runtime cycle.
+The scheduled Go test consumes the verified publication through the existing
+native asset, installer, guest and site owners. It exports held bytes, authenticates
+source and architecture bindings, prepares the real site VM and checks the live
+Kubernetes API `/readyz` and its single identified Ready node. The smoke also
+checks the VM's observed native KVM architecture, selected CPU count, TPM and
+exact disk backing before reporting success. The local Go test uses this same
+native smoke path; it does not compile or run
+NVKE's separate `controller/test/e2e` suite. No NVKE checkout is modified or required at runtime,
+and runtime does not rebuild product components, invoke Tilt or download an OS
+tag as a fallback.
 
-NVKR owns the setup and launch adapter. It sources existing NVKE test helpers,
-deploys the authenticated artifacts, and compiles `controller/test/e2e` from the
-unchanged selected checkout. It does not require NVKE's candidate-only shell
-entrypoint or invoke a Tilt rebuild or an OS-tag download as a fallback. The stock
-VM tests use a fixed release identifier containing `24.04` and `fde`; the adapter
-binds that diagnostic alias to the actual authenticated 26.04 plain profile.
-The alias does not establish 24.04 or FDE coverage. Source fixture metadata is used
-only to register the existing test matrix; it is not installed as candidate content.
+The default nightly stops after site smoke and owned cleanup. Explicit
+`tenant_checks` manual selection enables `NVKR_NIGHTLY_TENANT=1`: create the
+real tenant through the same site, check native Ready nodes and per-node clean
+cloud-init completion, run the selected-image workload and cluster-DNS check,
+then delete the tenant and site through their existing owners. Conformance is a
+separate, longer local opt-in and is not the nightly default. The local
+`TestEndToEnd` builds fresh artifacts through `BuildArtifacts` from its reviewed
+ARM64 baseline; the published nightly uses the frozen latest-main publication.
+They share native deployment and smoke owners without claiming identical build
+source selection.
+
+Linux requires the exact source-built Lima version `f47461e`, matched guest
+agents/templates and `nerdctl.lima`. ARM64 operators provision this prerequisite;
+the hosted AMD64 job provisions the pinned source. Ubuntu and nerdctl materials
+are architecture-specific and checksum-bound. See the
+[native Linux bootstrap guide](native-linux-bootstrap.md) for the exact pins and
+the narrower scope of the historical ARM64 backend pilot.
 
 The chart producers use the existing registry-addressable Go image and acquire
 Helm 4.1.4 by its existing operator-catalog archive and executable digests.
@@ -201,22 +221,21 @@ the earlier producer failures and reported runner repair above do not establish 
    Run records, locators and the frozen Plan remain descriptive until verification.
 4. Authenticate the complete publication, signing identity, production
    provenance, outputs and exact Definition, Environment and Plan. Export held
-   bytes only for the originating invocation. Extract native tools, images,
-   charts and disk through existing lifecycle and delivery owners.
-5. Use a private checkout at the exact NVKE commit in the frozen Plan. Require the
-   existing Go tests and test helpers before runtime work. Project authenticated profiles into current release
-   resources bound to the selected disk. Produce the suite's
-   `release-description/v1` input through NVKR's existing export renderer over
-   the held publication; the description adds no verification authority.
-   Compile and run the source-owned Go E2E suite through NVKR's setup adapter,
-   without rebuilding product components or
-   selecting newer tags. Initial coverage is `(nico-vms && ovn) || health`:
-   controller health/readiness/version and two-node OVN tenant tests. This does
-   not claim every existing suite or lifecycle operation runs.
-6. Require nonempty executed specs, passed assertions, observed KVM domains and
-   successful owned-resource cleanup. Join the disk service and restore
-   journaled network controls separately. Retain public outcomes and redacted
-   reports. Private credentials and guest disks are not report inputs.
+   bytes only for the originating invocation. Extract native tools, images
+   and disk through existing lifecycle and delivery owners. Published chart
+   outputs are authenticated; this smoke path uses the same-main installer
+   source charts through NVKE's existing bootstrap and deployment flow.
+5. Authenticate the installer archive and every source-built NVKE component
+   against the frozen commit. Pass the verified publication into the existing
+   native Go site owner. Bootstrap the site-controller VM using its authenticated
+   CLI, installer sources, images and disk. Stop and join the temporary bootstrap
+   backend, then check the live site API and its identified Ready node. With
+   explicit tenant checks, create the real tenant and require native node,
+   cloud-init, selected-image workload, DNS and KVM-domain observations.
+6. Require the invoked Go smoke checks and successful owned-resource cleanup.
+   Join the disk service, guest/backend processes and restore journaled network
+   controls before success. Attach only the constructed public cycle summary;
+   raw logs, Kubernetes data, credentials and guest disks stay private.
 
 The `runtime-test` job requires `cycle.json` to report the selected profile,
 exact coordinator run, attempt and commit, with `phase: runtime` and
@@ -224,16 +243,15 @@ exact coordinator run, attempt and commit, with `phase: runtime` and
 postcondition. Public outcomes use the `nightly-runtime-report-` artifact prefix;
 the name conveys no qualification authority.
 
-NVKE owns guest/cluster provisioning, assertions and guest/cluster teardown. The
-parent repository harness owns host admission, serialization, outer leases,
-the disk service and journaled network-control restoration. Each owner must
-complete cleanup before the parent reports a successful cycle.
+NVKE's source-built CLI and simulator own installation and guest operations.
+NVKR's existing native Go owners drive that lifecycle and its assertions, own
+host admission, serialization, the disk service and journaled network-control
+restoration, and join cleanup before reporting a successful cycle.
 
 The harness is a Go integration test under `internal/nvkedemo`, invoked directly
 by the workflow. There is no new staging command or standalone user-facing test
-binary. NVKE compiles and executes its own Go suite during the runtime step.
-Its existing deployment dependencies remain required; this change adds no
-Python implementation.
+binary. The scheduled test calls the native Go lifecycle directly. Its existing
+deployment dependencies remain required; this change adds no Python implementation.
 
 This test entrypoint is a non-authority repository diagnostic, not a supported
 NVKR product runtime API. The pinned NVKE code is fully trusted: sudo and the

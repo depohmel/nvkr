@@ -37,13 +37,14 @@ type nightlyCoordinatorDocument struct {
 		// Authored action inputs use GitHub's Boolean/integer/string scalars;
 		// the generated workflow's string-only With model is intentionally narrower.
 		Steps []struct {
-			ID   string            `json:"id"`
-			Name string            `json:"name"`
-			Run  string            `json:"run"`
-			Uses string            `json:"uses"`
-			If   string            `json:"if"`
-			Env  map[string]string `json:"env"`
-			With map[string]any    `json:"with"`
+			ID             string            `json:"id"`
+			Name           string            `json:"name"`
+			Run            string            `json:"run"`
+			Uses           string            `json:"uses"`
+			If             string            `json:"if"`
+			Env            map[string]string `json:"env"`
+			With           map[string]any    `json:"with"`
+			TimeoutMinutes int               `json:"timeout-minutes"`
 		} `json:"steps"`
 		Outputs     map[string]string `json:"outputs"`
 		Strategy    json.RawMessage   `json:"strategy"`
@@ -68,9 +69,26 @@ func nightlyCoordinatorFixture(t *testing.T) (nightlyCoordinatorDocument, []map[
 	if err != nil {
 		t.Fatal(err)
 	}
-	var profiles []map[string]string
-	if err := json.Unmarshal(raw, &profiles); err != nil {
+	var descriptions []map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &descriptions); err != nil {
 		t.Fatal(err)
+	}
+	// This fixture projects routing metadata. The native runtime owner validates
+	// the nested guest resource settings in the same maintained profile file.
+	profiles := make([]map[string]string, 0, len(descriptions))
+	for _, description := range descriptions {
+		profile := make(map[string]string)
+		for key, value := range description {
+			if key == "resources" {
+				continue
+			}
+			var text string
+			if err := json.Unmarshal(value, &text); err != nil {
+				t.Fatal(err)
+			}
+			profile[key] = text
+		}
+		profiles = append(profiles, profile)
 	}
 	return workflow, profiles
 }
@@ -138,14 +156,16 @@ func TestNightlyCoordinatorMaintainsExplicitProducerAndRuntimeBoundary(t *testin
 	executed, checkedSource, publicUpload := false, false, false
 	for _, step := range runtime.Steps {
 		if step.With["repository"] == "dsx-ai-factory/nvke" {
-			checkedSource = step.With["ref"] == "${{ steps.suite.outputs.commit }}" &&
-				step.With["persist-credentials"] == false && step.With["path"] == ".nightly-private/nvke"
+			t.Fatal("runtime must use authenticated installer sources rather than a separate suite checkout")
+		}
+		if step.ID == "suite" {
+			checkedSource = strings.Contains(step.Run, ".runtimeSourceCommit == $nvke")
 		}
 		if strings.Contains(step.Run, "go test ./internal/nvkedemo -run '^TestNightlyPublishedCandidate$'") {
 			executed = step.Env["NVKR_NIGHTLY_ENABLE"] == "1" &&
 				step.Env["NVKR_NIGHTLY_NETWORK_HELPER"] == "${{ github.workspace }}/bin/nvke-demo" &&
 				strings.Contains(step.Run, "-list '^TestNightlyPublishedCandidate$'") &&
-				strings.Contains(step.Run, "-timeout 330m -count=1 -v") &&
+				strings.Contains(step.Run, `-timeout "${remaining}s" -count=1 -v`) &&
 				strings.Contains(step.Run, `.phase == "runtime" and .runtimePassed == true`) &&
 				strings.Contains(step.Run, `.coordinatorRun == $run and .coordinatorAttempt == $attempt`) &&
 				strings.Contains(step.Run, `.sourceCommit == $sha`)

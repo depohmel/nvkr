@@ -219,9 +219,9 @@ func TestNightlyWorkflowCandidateSelectsOnlyExactCycleAndBooleanPolicy(t *testin
 	}
 }
 
-func TestNightlyWorkflowFreshArtifactAndSuiteCheckoutAreOrderedAndBound(t *testing.T) {
+func TestNightlyWorkflowFreshArtifactAndNativeSmokeAreOrderedAndBound(t *testing.T) {
 	steps := nightlyWorkflowSteps(t)
-	candidate, download, suite, checkout := -1, -1, -1, -1
+	candidate, download, suite, smoke := -1, -1, -1, -1
 	for index, step := range steps {
 		switch {
 		case step.ID == "candidate":
@@ -239,13 +239,12 @@ func TestNightlyWorkflowFreshArtifactAndSuiteCheckoutAreOrderedAndBound(t *testi
 		case step.ID == "suite":
 			suite = index
 		case step.With["repository"] == "dsx-ai-factory/nvke":
-			checkout = index
-			if step.With["ref"] != "${{ steps.suite.outputs.commit }}" || step.With["persist-credentials"] != "false" {
-				t.Fatal("NVKE checkout is not bound to derived exact suite revision")
-			}
+			t.Fatal("native smoke must consume authenticated installer sources without a separate suite checkout")
+		case strings.Contains(step.Run, "-run '^TestNightlyPublishedCandidate$'"):
+			smoke = index
 		}
 	}
-	if candidate < 0 || !(candidate < download && download < suite && suite < checkout) {
-		t.Fatalf("producer/Plan/suite ordering changed: %d/%d/%d/%d", candidate, download, suite, checkout)
+	if candidate < 0 || !(candidate < download && download < suite && suite < smoke) {
+		t.Fatalf("producer/Plan/source cohort/smoke ordering changed: %d/%d/%d/%d", candidate, download, suite, smoke)
 	}
 }

@@ -70,17 +70,27 @@ func nativeToolSelection(platform string) (definition, environment, bundle strin
 	}
 }
 
+// Runtime views may be prepared from an authenticated publication without
+// selecting or authoring an additional local build Definition.
+func nativeRuntimeToolMembers(platform string) ([]string, error) {
+	if platform == "linux/amd64" {
+		return []string{"clusterctl", "helm", "kind", "kubectl", "nerdctl", "nico-sim", "nico-simctl", "nvke-installer-sources", "nvkectl", "oras"}, nil
+	}
+	_, _, _, members, err := nativeToolSelection(platform)
+	return members, err
+}
+
 type companionToolBundle struct {
 	name, directory string
 	members         []string
 }
 
 func siteStartupToolBundles(platform string) []companionToolBundle {
-	if platform != "darwin/arm64" && platform != "linux/arm64" {
+	if platform != "darwin/arm64" && platform != "linux/arm64" && platform != "linux/amd64" {
 		return nil
 	}
 	return []companionToolBundle{
-		{"site-startup-tools-arm64", "bin", []string{"nerdctl", nativeIdentityHelper}},
+		{"site-startup-tools-" + strings.Split(platform, "/")[1], "bin", []string{"nerdctl", nativeIdentityHelper}},
 	}
 }
 

@@ -6,9 +6,31 @@
   "kind": "Definition",
   "metadata": {
     "name": "nvke-nightly-amd64",
-    "description": "Pipeline-attested AMD64 nightly candidate selecting the complete 29-output NVKE artifact set with NVIDIA-fork OVN and native required-KVM node-image production. Authored inputs only; host capacity, compatible runtime harness and a full published E2E remain independently gated."
+    "description": "Pipeline-attested AMD64 nightly candidate with NVIDIA OVN, native KVM node-image production and authenticated inputs for the NVKR Go site-bootstrap smoke test. Runtime and cleanup require a completed external cycle."
   },
   "outputs": [
+    {
+      "catalog": {
+        "base": "../../catalogs/tools/nightly-bootstrap-amd64"
+      },
+      "components": [
+        "native-capi-exec-init-image"
+      ],
+      "format": "oci",
+      "name": "capi-exec-init-image-amd64",
+      "platform": "linux/amd64"
+    },
+    {
+      "catalog": {
+        "base": "../../catalogs/tools/nightly-bootstrap-amd64"
+      },
+      "components": [
+        "native-capi-exec-plugin-image"
+      ],
+      "format": "oci",
+      "name": "capi-exec-plugin-image-amd64",
+      "platform": "linux/amd64"
+    },
     {
       "catalog": {
         "base": "../../catalogs/capnico/local-amd64"
@@ -78,6 +100,17 @@
       ],
       "format": "oci",
       "name": "cwe",
+      "platform": "linux/amd64"
+    },
+    {
+      "catalog": {
+        "base": "../../catalogs/tools/nightly-bootstrap-amd64"
+      },
+      "components": [
+        "nvke-installer-sources"
+      ],
+      "format": "executable",
+      "name": "installer-sources-amd64",
       "platform": "linux/amd64"
     },
     {
@@ -222,6 +255,18 @@
     },
     {
       "catalog": {
+        "base": "../../catalogs/tools/nightly-bootstrap-amd64"
+      },
+      "components": [
+        "nerdctl",
+        "nvkr-site-identity-helper"
+      ],
+      "format": "executable",
+      "name": "site-startup-tools-amd64",
+      "platform": "linux/amd64"
+    },
+    {
+      "catalog": {
         "base": "../../catalogs/runtime-dependencies"
       },
       "components": [
@@ -361,6 +406,17 @@
       ],
       "format": "oci",
       "name": "temporal-ui-image-amd64",
+      "platform": "linux/amd64"
+    },
+    {
+      "catalog": {
+        "base": "../../catalogs/tools/nightly-bootstrap-amd64"
+      },
+      "components": [
+        "native-workload-image"
+      ],
+      "format": "oci",
+      "name": "workload-image-amd64",
       "platform": "linux/amd64"
     }
   ],

@@ -102,7 +102,7 @@ func nativeAccelerator(platform, requested string) (string, error) {
 		switch platform {
 		case "darwin/arm64":
 			requested = "hvf"
-		case "linux/arm64":
+		case "linux/arm64", "linux/amd64":
 			requested = "kvm"
 		}
 	}

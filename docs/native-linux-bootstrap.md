@@ -1,12 +1,15 @@
 # Native Linux bootstrap backend
 
 The Linux adapter reuses the Mac demo's private temporary Lima owner.
-NVKR, `nvkectl` and Kind execute on the Ubuntu host; container commands use
+NVKR, `nvkectl` and kind execute on the Ubuntu host; container commands use
 upstream `nerdctl.lima` to reach the private backend. The permanent site and
 tenant guests remain NICo-managed QEMU/KVM VMs. The backend must stop and join
 before tenant provisioning. The source implementation has ownership and version
 admission tests. One explicitly approved private backend pilot passed; the complete
-fresh site/tenant demo remains required.
+fresh site/tenant demo remains required. The native runtime also supports Linux
+AMD64 with architecture-matched materials. The hosted nightly provisions the
+same pinned Lima source; the ARM64 local workflow requires its matched installed
+prerequisite. This does not extend the recorded ARM64 pilot result to AMD64.
 
 ## Selected tool and source
 
@@ -23,6 +26,9 @@ matching helpers, Linux guest agents and templates. Generated manpages and a
 release archive were not built. The selected ARM64 limactl is SHA256
 `3c9f2b85164973a53a08e5bb1beb9a10eca27a8723cab6db2c802d46334370a3`.
 This is a local diagnostic build record, not an upstream release signature.
+The hosted AMD64 build uses the same exact source and honest version, with its
+matching native guest agent and templates. The ARM64 binary digest above cannot
+authenticate an AMD64 build or a build with a different Go SDK.
 
 ## Install from public source on Ubuntu ARM64
 
@@ -95,14 +101,20 @@ binary or source checks.
 
 ## Runtime materials and private distribution
 
-The proposed QEMU backend selects one image and one containerd archive from the
-same upstream source, replacing inherited image lists so a digestless fallback
-cannot be used:
+The QEMU backend selects one image and one containerd archive for the observed
+native architecture, replacing inherited image lists so a digestless or
+cross-architecture fallback cannot be used:
 
 | Material | Exact source selection |
 | --- | --- |
 | Ubuntu ARM64 server image | `https://cloud-images.ubuntu.com/releases/resolute/release-20260927/ubuntu-26.04-server-cloudimg-arm64.img`, SHA256 `63a93bd5a8d76e33b15ceb5daa3657bd79be804748051ab178e643b0f5da22e7` |
 | nerdctl-full 2.4.1 ARM64 | `https://github.com/containerd/nerdctl/releases/download/v2.4.1/nerdctl-full-2.4.1-linux-arm64.tar.gz`, SHA256 `2deffe14625f93866f90a8f265d0f59d6fa476c7dc54b98adb327b1b4613efd4` |
+| Ubuntu AMD64 server image | `https://cloud-images.ubuntu.com/releases/resolute/release-20260927/ubuntu-26.04-server-cloudimg-amd64.img`, SHA256 `8800651811af9a85465ad1d552add729947bb16488dddb4a9b5305a3d97332b2` |
+| nerdctl-full 2.4.1 AMD64 | `https://github.com/containerd/nerdctl/releases/download/v2.4.1/nerdctl-full-2.4.1-linux-amd64.tar.gz`, SHA256 `ff018f11ac2f1354bf7b3aaaca6e0b52d81139c746a89134744d0b7be3a0e62f` |
+
+The architecture-specific digests were checked against the official
+[Ubuntu checksum record](https://cloud-images.ubuntu.com/releases/resolute/release-20260927/SHA256SUMS)
+and [nerdctl checksum record](https://github.com/containerd/nerdctl/releases/download/v2.4.1/SHA256SUMS).
 
 These are acquisition pins, not completed downloads or security clearance for
 every component inside an image/archive. QEMU, firmware and native libraries

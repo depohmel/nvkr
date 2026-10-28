@@ -464,8 +464,13 @@ AMD64 diagnostic bake does not establish FDE publication or ARM64 FDE operationa
 
 The separate nightly coordinator resolves NVKE `main` once and binds its exact
 commit to the generated runtime Plan, all source-built NVKE components and the
-existing local Go E2E checkout. NVKR owns this repository CI orchestration and
-artifact handoff. External dependencies retain their reviewed catalog selections;
+authenticated installer source archive. NVKR owns this repository CI orchestration,
+artifact handoff and direct native Go smoke test. Its existing native lifecycle
+bootstraps a permanent site-controller VM through a temporary kind/Lima backend
+that stops and joins before optional tenant checks. Default coverage is the live
+site API and identified Ready node; explicit tenant checks add native readiness,
+cloud-init and selected-image workload/DNS. Conformance remains a separate local
+opt-in. External dependencies retain their reviewed catalog selections;
 the latest source policy does not assert a refreshed dependency inventory or a
 successful deployment. Runtime publication and cleanup acceptance still require
 a completed recorded cycle.

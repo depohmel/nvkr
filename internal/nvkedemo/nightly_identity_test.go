@@ -37,21 +37,19 @@ import (
 // These test-only descriptions correlate one admitted nightly cycle. They issue
 // no publication, signer, source, runtime or qualification authority.
 type NightlyProfile struct {
-	Name              string `json:"name"`
-	Bundle            string `json:"bundle"`
-	Definition        string `json:"definition"`
-	Environment       string `json:"environment"`
-	Plan              string `json:"plan"`
-	BuildWorkflow     string `json:"build_workflow"`
-	HarnessCommit     string `json:"harness_commit,omitempty"`
-	RuntimeTarget     string `json:"runtime_target"`
-	Network           string `json:"network"`
-	DiskOutput        string `json:"disk_output"`
-	ControllerOutput  string `json:"controller_output,omitempty"`
-	ProfilesOutput    string `json:"profiles_output"`
-	OSProfile         string `json:"os_profile"`
-	KubernetesVersion string `json:"kubernetes_version"`
-	LabelFilter       string `json:"label_filter"`
+	Name             string          `json:"name"`
+	Bundle           string          `json:"bundle"`
+	Definition       string          `json:"definition"`
+	Environment      string          `json:"environment"`
+	Plan             string          `json:"plan"`
+	BuildWorkflow    string          `json:"build_workflow"`
+	HarnessCommit    string          `json:"harness_commit,omitempty"`
+	RuntimeTarget    string          `json:"runtime_target"`
+	Network          string          `json:"network"`
+	DiskOutput       string          `json:"disk_output"`
+	ControllerOutput string          `json:"controller_output,omitempty"`
+	ProfilesOutput   string          `json:"profiles_output"`
+	Resources        NativeResources `json:"resources,omitempty"`
 }
 
 type NightlyBuild struct {
@@ -164,21 +162,20 @@ func validateNightlyProfile(profile NightlyProfile) error {
 	if profile.HarnessCommit != "" {
 		return e.New(e.CodeUnpinnedInput, "nightly suite revision must come from the cycle-frozen NVKE main source, not an authored harness override")
 	}
-	if profile.RuntimeTarget == "" || profile.Network == "" || profile.DiskOutput == "" || profile.ProfilesOutput == "" || profile.OSProfile == "" || profile.KubernetesVersion == "" || profile.LabelFilter == "" {
-		return e.New(e.CodeVerifyFailed, "profile omits exact harness or runtime intent")
+	if profile.RuntimeTarget == "" || profile.Network == "" || profile.DiskOutput == "" || profile.ProfilesOutput == "" {
+		return e.New(e.CodeVerifyFailed, "profile omits exact runtime intent")
 	}
-	arch, err := nightlyArchitecture(profile.RuntimeTarget)
-	if err != nil {
+	if _, err := nightlyArchitecture(profile.RuntimeTarget); err != nil {
 		return err
 	}
-	if arch == "amd64" && profile.Network == "upstream-ovn" {
-		return e.New(e.CodeEngineCapability, "AMD64 upstream OVN requires a compatible candidate disk endpoint contract")
-	}
-	if profile.Network != "ovn" && profile.Network != "upstream-ovn" {
-		return e.New(e.CodeEngineCapability, "nightly adapter requires an explicit supported OVN network")
+	if profile.Network != "ovn" {
+		return e.New(e.CodeEngineCapability, "published native nightly requires the NVIDIA OVN selection")
 	}
 	if profile.ControllerOutput != "" && !nightlyOutputNamePattern.MatchString(profile.ControllerOutput) {
 		return e.New(e.CodeVerifyFailed, "nightly controller output requires a canonical logical name")
+	}
+	if _, err := selectedNativeResources(profile.Resources); err != nil {
+		return err
 	}
 	return nil
 }

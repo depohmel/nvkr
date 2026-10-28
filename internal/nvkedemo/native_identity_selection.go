@@ -33,13 +33,17 @@ func nativeSelectedRunPlan(ctx context.Context, root, outputName, format string)
 type nativeIdentityAssets struct{ helperSHA string }
 
 func nativeIdentityComponent(plan *factory.Plan, output, buildDigest, component string) (catalog.Component, error) {
+	return nativeIdentityComponentForPlatform(plan, output, buildDigest, component, "linux/arm64")
+}
+
+func nativeIdentityComponentForPlatform(plan *factory.Plan, output, buildDigest, component, platform string) (catalog.Component, error) {
 	var selected *catalog.Component
 	for _, build := range plan.Builds {
 		if build.Name != output {
 			continue
 		}
-		if build.BuildDigest != buildDigest || build.Platform != "linux/arm64" {
-			return catalog.Component{}, errors.New("identity input differs from the selected ARM64 output")
+		if build.BuildDigest != buildDigest || build.Platform != platform {
+			return catalog.Component{}, errors.New("identity input differs from the selected native output")
 		}
 		for _, item := range build.ResolvedComponents {
 			if item.Name != component {
