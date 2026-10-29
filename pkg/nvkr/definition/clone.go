@@ -51,6 +51,7 @@ func (input Environment) Clone() Environment {
 	}
 	if input.Publication != nil {
 		value := *input.Publication
+		value.Transports = slices.Clone(value.Transports)
 		value.ImageTags = maps.Clone(value.ImageTags)
 		input.Publication = &value
 	}

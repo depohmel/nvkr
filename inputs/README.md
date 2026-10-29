@@ -1,6 +1,6 @@
 # Authored inputs
 
-This directory owns the repository's NVKE build and release inputs. Definitions select named outputs
+This directory owns the repository's NVKE and NVSentinel build and release inputs. Definitions select named outputs
 from pinned catalog producers; Environments select execution and publication policy. The maintained
 release candidate starts at [the NVKE Definition](definitions/nvke/definition.yaml).
 The [four-family pilot](definitions/nvke/README.md#four-family-pilot) supplies independent core, services,
@@ -65,6 +65,13 @@ The hosted variants use the matching `environments/github-ubuntu24-<arch>.yaml` 
 and remain build-only; they do not change maintained release membership or Ubuntu 26 defaults.
 
 ## Focused inputs and examples
+
+The [dedicated NVSentinel catalog](catalogs/nvsentinel/README.md) declares OCI images, Helm, executable
+binaries and DEB packages. Its focused callers live under `definitions/nvsentinel/`, with local execution
+policies under `environments/nvsentinel/`. The [NVKE OS material experiment](experiments/nvsentinel/README.md)
+keeps separate Debian producer copies with byte-identical commands, matching source declarations and pins,
+and the existing composer/Packer folder handoff. These development inputs do not
+change the maintained NVKE release or demonstrate current NVSentinel build/runtime acceptance.
 
 `definitions/diagnostics/demo-arm64/` retains the existing components, OS, profiles, providers,
 simulator, site and installer-tool loops used by the local launcher. Additional controller and OVN

@@ -15,7 +15,9 @@ this does not change the authenticated image identity or rewrite templates.
 _Avoid_: Factory, FactoryDefinition, cluster definition
 
 **Environment**:
-Separately selected execution settings, publication namespace, credential references, and signing identity policy.
+Separately selected execution settings, required publication transports and namespace, credential references,
+and signing identity policy. Selecting an unavailable transport fails before work; a supported sibling cannot
+substitute for it.
 Native hosted platform routes are explicit execution settings; they do not change logical Build identity
 or prove provider allocation. Tool releases are catalog-owned dependencies selected by purpose in the Definition. GitHub action releases
 are also catalog dependencies; the workflow adapter consumes their locked commits.
@@ -164,6 +166,12 @@ _Avoid_: Release publication root, native image manifest, qualification receipt
 **Binary bundle**:
 An Artifact format containing exact executable files and their installation metadata.
 _Avoid_: Release, arbitrary archive
+
+**Debian package**:
+An Artifact format (`debian-package`) containing one raw Debian archive from an explicitly selected source
+producer. The same package bytes can be supplied as an OS build material. Local retention does not establish
+installation or runtime acceptance.
+_Avoid_: APT repository, installed package, builder type
 
 ## Evidence and authority
 

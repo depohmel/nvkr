@@ -192,8 +192,7 @@ func (plan Plan) validatePlanBuilds() error {
 		if !ok || selection.Platform != buildPlan.Platform {
 			return e.New(e.CodeUnverifiedRef, "native build %q graph identity is not selected by its Definition", buildPlan.Name)
 		}
-		outputFormat := selection.Format
-		if err := validateBuildCatalog(buildPlan, outputFormat, plan.Environment); err != nil {
+		if err := validateBuildCatalog(buildPlan, selection, plan.Environment); err != nil {
 			return err
 		}
 		for _, node := range buildPlan.Graph.Nodes {
@@ -241,7 +240,7 @@ func (plan *Plan) catalogPinSetRepositories() map[string]bool {
 
 // validateBuildCatalog binds the complete executable graph to its catalog and
 // Environment. Logical identity alone excludes transport and execution metadata.
-func validateBuildCatalog(build BuildPlan, outputFormat string, environment authored.Environment) error {
+func validateBuildCatalog(build BuildPlan, output authored.DefinitionOutput, environment authored.Environment) error {
 	if build.CatalogSnapshot == nil {
 		return e.New(e.CodeUnverifiedRef, "output %q has no catalog snapshot", build.Name)
 	}
@@ -252,12 +251,12 @@ func validateBuildCatalog(build BuildPlan, outputFormat string, environment auth
 	if digest != build.CatalogDigest {
 		return e.New(e.CodeUnverifiedRef, "output %q catalog snapshot differs", build.Name)
 	}
-	selection := buildgraph.Selection{Components: build.Components, Platform: build.Platform, OutputFormat: outputFormat}
+	selection := buildgraph.Selection{Components: output.Components, Platform: output.Platform, OutputFormat: output.Format}
 	selected, err := buildgraph.Resolve(build.CatalogSnapshot, selection)
 	if err != nil {
 		return err
 	}
-	if !reflect.DeepEqual(selected.Components, build.ResolvedComponents) {
+	if selected.Platform != build.Platform || !reflect.DeepEqual(selected.Components, build.ResolvedComponents) {
 		return e.New(e.CodeUnverifiedRef, "output %q resolved producers differ from catalog", build.Name)
 	}
 	graph, err := compileBuildGraph(selected, environment)
