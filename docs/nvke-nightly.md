@@ -44,6 +44,11 @@ ancestry admission requires the selected commit to belong to `main`, allowing
 the branch to advance during the cycle. A branch name, caller path or detached
 digest alone grants no artifact authority.
 
+Finalization repeats the proof against the then-current `main`. A delayed retry
+outside the 64-commit fetch window, or a ref rewrite that removes the frozen
+commit, fails closed before a Run record is issued even if signing and publication
+already completed.
+
 The coordinator's `NKE_SOURCE_TOKEN` resolves NVKE `main`; producer source access
 uses its existing credential policy. Dispatch and metadata reads use separate
 job-scoped GitHub token permissions. Product publication remains in the generated

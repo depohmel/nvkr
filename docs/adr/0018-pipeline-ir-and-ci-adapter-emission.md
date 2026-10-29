@@ -1339,7 +1339,10 @@ byte and time limits. An off-main commit or unavailable bounded proof fails clos
 The owner authenticates that exact Git tree and applies it after existing catalog overlays to every
 matching source-built producer, retaining reviewed commands, toolchains and independent
 acquisition pins. The Plan records the frozen commit. Bootstrap and finalization replay
-that same revision; a missing or mixed revision fails before producer acceptance. This
+that same revision; a missing or mixed revision fails before producer acceptance.
+Finalization repeats the proof against the then-current `main`. A delayed retry outside
+the 64-commit fetch window, or a ref rewrite that removes the frozen commit, fails closed
+before a Run record is issued even if signing and publication already completed. This
 changes frozen Plan data, not the authored catalog files or workflow between source pins.
 The committed baseline is generation input, not an executable source selection. Ordinary
 input capture and qualification handoff have no replay contract for this lane and reject it;

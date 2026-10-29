@@ -3317,7 +3317,10 @@ commit and dispatches the existing generated ARM64 NVIDIA producer. Its 34 named
 outputs include the native host/site inputs used by the consumer. The runtime
 source policy binds all source-built NVKE products and finalization to that
 cycle commit and requires Git ancestry proof under `main`, while independent
-dependency pins retain their owners. The first
+dependency pins retain their owners. Finalization rechecks the then-current `main`;
+a delayed retry outside the 64-commit fetch window or a ref rewrite removing the
+frozen commit fails closed before a Run record is issued, even if signing and
+publication already completed. The first
 consumer runs on `arc-arm64-kvm`; no parallel AMD64 producer bundle is added.
 
 `TestNightlyPublishedCandidate` retrieves the exact producing Run, same-Run Plan

@@ -653,28 +653,59 @@ Cross-process automatic Packer orphan recovery is not implemented.
 
 ## Repeat through the opt-in native E2E test
 
-`TestEndToEnd` invokes the normal `bin/nvke-demo e2e` CLI with fresh paths,
-NVIDIA OVN, conformance and cleanup on native Mac/Ubuntu ARM64. Both hosts use
-the 14-hour wrapper budget, including two hours beyond the CLI work deadline.
-Ordinary tests skip this real build/deployment operation.
-The binary and checkout must come from the same reviewed source revision.
+`TestEndToEnd` calls the existing Go build and native-site owners directly. It
+builds fresh local Runs, bootstraps a real site VM and, by default, checks the
+site API and identified Ready node. Linux additionally checks native VM evidence.
+Ordinary tests skip this operation unless `NVKR_NVKE_E2E=1`. The scoped site
+owner handles cleanup after success, failure or cancellation; unjoined work
+retains its dependent controls.
+
+The default inputs support native Mac and Ubuntu ARM64. The test still needs
+`bin/nvke-demo` from the same reviewed NVKR revision for its private host helpers;
+it does not launch the `nvke-demo e2e` CLI. From the NVKR checkout, use fresh
+attempt and output paths:
 
 ```sh
 export NVKR_NVKE_E2E=1
 export NVKR_NVKE_E2E_REPO="$(pwd -P)"
 export NVKR_NVKE_E2E_OUT="$PWD/.nvkr/native-test-01"
 export NVKR_NVKE_E2E_ATTEMPT=native-test-01
-# Optional: NVKR_NVKE_E2E_BINARY selects the same-revision CLI at another path.
-GOTOOLCHAIN=local go test ./internal/nvkedemo -run '^TestEndToEnd$' -count=1 -timeout 16h
+# Optional: NVKR_NVKE_E2E_BINARY selects the same-revision helper at another path.
+GOTOOLCHAIN=local go test ./internal/nvkedemo -run '^TestEndToEnd$' -count=1 -timeout 10h
 ```
 
-This test launches the CLI non-interactively. It cannot accept sudo passwords;
-Linux requires the documented unattended administrator policy, not a temporary
-`sudo -v` cache. Mac still requires its installed native/vmnet prerequisites.
-The test wrapper leaves two hours beyond the CLI's own work deadline for
-independently bounded diagnostics and joined cleanup.
-Its normal CLI invocation is test wiring, not evidence that a fresh complete
-Mac or Ubuntu invocation has passed.
+The optional selections are:
+
+- `NVKR_NVKE_E2E_TENANT=1` additionally creates a tenant and checks node readiness,
+  workload and DNS.
+- `NVKR_NVKE_E2E_CONFORMANCE=1` additionally creates the tenant and runs conformance.
+  This requires native Mac or Ubuntu ARM64; Linux AMD64 conformance is unsupported.
+  A configuration with `run.conformance: true` selects the same scope.
+- `NVKR_NVKE_E2E_CONFIG=/absolute/path/to/demo.yaml` selects an explicit version-1
+  build/run configuration, replacing the repository, output and attempt environment
+  inputs above. Adapt [the existing example](../demos/local-nvke.yaml) with fresh
+  paths and positive `build.jobs`. Existing `run.runs` or `run.nvkr` selections are
+  refused because this test consumes its own fresh build.
+
+Work has an eight-hour ceiling, extended to twelve hours with conformance. The
+test also reserves two hours before the Go test deadline for independently
+bounded diagnostics and joined cleanup; a shorter timeout reduces work time.
+Use `-timeout 10h` for the full ordinary budget or `-timeout 14h` with conformance.
+Choose fresh attempt/output paths before every invocation.
+
+For native Linux AMD64, use the configuration option with all three explicit
+build selections: `build.definition: inputs/definitions/demo/amd64-nvidia-local-kvm.json`,
+`build.environment: inputs/environments/local-amd64-kvm.json` and
+`build.nvkr` pointing to the existing NVKR executable. Linux requires KVM.
+On Mac, set `run.accelerator: tcg` for the retained 64K image as described above.
+`build.nvkeClone` optionally supplies local source objects; without a configuration,
+the corresponding input is `NVKE_LOCAL_CLONE`.
+
+Execution is noninteractive and cannot accept sudo passwords. Linux requires the
+documented unattended administrator policy; Mac requires its installed native/vmnet
+prerequisites. These test paths and budgets do not establish a completed runtime
+or conformance result. The [scheduled nightly](nvke-nightly.md) separately consumes
+authenticated published artifacts through `TestNightlyPublishedCandidate`.
 
 ### Reuse a native site from Go tests
 
@@ -863,9 +894,11 @@ producers inspect actual Debian `Package`/`Architecture` metadata, and the disk
 uses NVKE's renamed Packer build/material schema and QCOW2 output. Changed package
 bytes require a fresh disk build. Maintained release, upstream and TCG product
 selections also use NVKE `v0.22.0`; their third-party pins and historical runtime
-evidence remain separate. The [nightly Go test](nvke-nightly.md) separately builds latest NVKE main and
-bootstraps locally, with its own private captured source selection. It does not
-use the former separately pinned controller E2E suite.
+evidence remain separate. The [scheduled nightly](nvke-nightly.md) resolves latest
+NVKE main, dispatches the NVIDIA ARM64 producer and runs its native Go site smoke
+against that exact Run's authenticated published artifacts. Its runtime consumer
+does not rebuild products or use the upstream OVN producer. The local
+`TestEndToEnd` flow above retains its separate fresh-build scope.
 
 The native VM recipe stages `dhcp-identifier: mac` for both hosts through NVKE's
 existing image-input composer. This makes DHCPv4 use the NIC MAC rather than an

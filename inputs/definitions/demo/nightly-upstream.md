@@ -44,7 +44,8 @@ regeneration commit. CI checks that contract with `run generate --runtime --chec
 execution contract still require normal regeneration and review.
 
 This generated workflow remains a manually dispatched publication diagnostic.
-The scheduled [nightly Go test](../../../docs/nvke-nightly.md) builds latest NVKE
-main and bootstraps a site locally in each architecture job; it does not dispatch
-this producer or consume its publication. Definition validation and generation
-do not establish a successful build, VM runtime or hardware acceptance.
+The scheduled [nightly Go test](../../../docs/nvke-nightly.md) resolves latest NVKE
+main, dispatches the NVIDIA ARM64 producer and tests that exact Run's authenticated
+published artifacts through the native Go site owner. It does not dispatch this
+upstream OVN producer or consume its publication. Definition validation and
+generation do not establish a successful build, VM runtime or hardware acceptance.
