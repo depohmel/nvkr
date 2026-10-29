@@ -35,7 +35,7 @@
       "name": "capnico-controller-amd64",
       "platform": "linux/amd64",
       "catalog": {
-        "base": "../../catalogs/capnico/local-arm64"
+        "base": "../../catalogs/capnico/local"
       },
       "components": [
         "capnico-controller"
@@ -46,7 +46,7 @@
       "name": "cluster-api-provider-provisioned-amd64",
       "platform": "linux/amd64",
       "catalog": {
-        "base": "../../catalogs/nvke/native-site-arm64"
+        "base": "../../catalogs/nvke/native-site"
       },
       "components": [
         "cluster-api-provider-provisioned"
@@ -57,7 +57,7 @@
       "name": "controller-chart",
       "platform": "linux/amd64",
       "catalog": {
-        "base": "../../catalogs/nvke/native-site-arm64"
+        "base": "../../catalogs/nvke/native-site"
       },
       "components": [
         "nvke-controller-chart"
@@ -73,7 +73,7 @@
       "name": "controller-profiles",
       "platform": "linux/amd64",
       "catalog": {
-        "base": "../../catalogs/controller-profiles/native-nvidia-arm64"
+        "base": "../../catalogs/controller-profiles/native-nvidia"
       },
       "components": [
         "nvke-local-profiles"
@@ -95,7 +95,7 @@
       "name": "cwe",
       "platform": "linux/amd64",
       "catalog": {
-        "base": "../../catalogs/nvke/native-site-arm64"
+        "base": "../../catalogs/nvke/native-site"
       },
       "components": [
         "nvke-controller"
@@ -154,7 +154,7 @@
       "name": "nktp",
       "platform": "linux/amd64",
       "catalog": {
-        "base": "../../catalogs/nvke/native-site-arm64"
+        "base": "../../catalogs/nvke/native-site"
       },
       "components": [
         "nktp-chart"
@@ -190,7 +190,7 @@
       "name": "nvkectl",
       "platform": "linux/amd64",
       "catalog": {
-        "base": "../../catalogs/nvke/native-site-arm64"
+        "base": "../../catalogs/nvke/native-site"
       },
       "components": [
         "nvkectl"
@@ -245,7 +245,7 @@
       "name": "postgresql",
       "platform": "linux/amd64",
       "catalog": {
-        "base": "../../catalogs/nvke/native-site-arm64"
+        "base": "../../catalogs/nvke/native-site"
       },
       "components": [
         "postgresql-chart"
@@ -290,7 +290,7 @@
       "name": "spire",
       "platform": "linux/amd64",
       "catalog": {
-        "base": "../../catalogs/nvke/native-site-arm64"
+        "base": "../../catalogs/nvke/native-site"
       },
       "components": [
         "spire-chart"
@@ -334,7 +334,7 @@
       "name": "spire-crds",
       "platform": "linux/amd64",
       "catalog": {
-        "base": "../../catalogs/nvke/native-site-arm64"
+        "base": "../../catalogs/nvke/native-site"
       },
       "components": [
         "spire-crds-chart"
@@ -378,7 +378,7 @@
       "name": "temporal",
       "platform": "linux/amd64",
       "catalog": {
-        "base": "../../catalogs/nvke/native-site-arm64"
+        "base": "../../catalogs/nvke/native-site"
       },
       "components": [
         "temporal-chart"

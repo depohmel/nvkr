@@ -17,7 +17,7 @@ import (
 )
 
 func TestLaptopCAPNICoSourceBuild(t *testing.T) {
-	cat, err := catalog.LoadContext(t.Context(), catalog.Dir(filepath.Join("..", "..", "..", "inputs/catalogs/capnico/local-arm64")))
+	cat, err := catalog.LoadContext(t.Context(), catalog.Dir(filepath.Join("..", "..", "..", "inputs/catalogs/capnico/local")))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -69,7 +69,7 @@ func TestLaptopCAPNICoSourceBuild(t *testing.T) {
 }
 
 func TestNativeHelmVendoringBindsTargetArchitecture(t *testing.T) {
-	cat, err := catalog.LoadContext(t.Context(), catalog.Dir("../../../inputs/catalogs/nvke/native-site-arm64"))
+	cat, err := catalog.LoadContext(t.Context(), catalog.Dir("../../../inputs/catalogs/nvke/native-site"))
 	if err != nil {
 		t.Fatal(err)
 	}

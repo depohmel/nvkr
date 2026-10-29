@@ -13,7 +13,7 @@ import (
 )
 
 func TestNativeNKTPDependencyArchiveChecks(t *testing.T) {
-	cat, err := LoadContext(t.Context(), Dir("../../../inputs/catalogs/nvke/native-site-arm64"))
+	cat, err := LoadContext(t.Context(), Dir("../../../inputs/catalogs/nvke/native-site"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -89,9 +89,9 @@ func TestNativeCatalogsShareLinuxArchitectures(t *testing.T) {
 		directory  string
 		components []string
 	}{
-		{"nvke/native-site-arm64", []string{"nvkectl", "nvke-controller", "cluster-api-provider-provisioned", "nvke-controller-chart", "nktp-chart"}},
-		{"capnico/local-arm64", []string{"capnico-controller"}},
-		{"controller-profiles/native-nvidia-arm64", []string{"nvke-local-profiles"}},
+		{"nvke/native-site", []string{"nvkectl", "nvke-controller", "cluster-api-provider-provisioned", "nvke-controller-chart", "nktp-chart"}},
+		{"capnico/local", []string{"capnico-controller"}},
+		{"controller-profiles/native-nvidia", []string{"nvke-local-profiles"}},
 		{"tools/native", []string{"nerdctl", "nico-sim", "nico-simctl", "nvke-installer-sources", "nvkectl", "nvkr-site-identity-helper", "native-capi-exec-init-image", "native-capi-exec-plugin-image", "native-workload-image"}},
 	} {
 		t.Run(tc.directory, func(t *testing.T) {
@@ -146,7 +146,7 @@ func TestNativeAMD64AcquisitionsKeepReleaseAndPlatform(t *testing.T) {
 }
 
 func TestNativeHelmVendorPinsMatchTheSharedTools(t *testing.T) {
-	site, err := LoadContext(t.Context(), Dir("../../../inputs/catalogs/nvke/native-site-arm64"))
+	site, err := LoadContext(t.Context(), Dir("../../../inputs/catalogs/nvke/native-site"))
 	if err != nil {
 		t.Fatal(err)
 	}

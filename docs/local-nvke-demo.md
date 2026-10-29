@@ -871,9 +871,9 @@ below. NVKR verifies the pinned commit and tree; NVIDIA OVN retains its separate
 | Part | Selected source | Owning input |
 | --- | --- | --- |
 | Native host CLI, installer and NICoSim | `v0.22.0` / `400c24fb` | [Shared tools lock](../inputs/catalogs/tools/native/pins.lock.yaml) |
-| Site CLI/controller/charts and provisioned provider | `v0.22.0` / `400c24fb` | [Native site lock](../inputs/catalogs/nvke/native-site-arm64/pins.lock.yaml) |
+| Site CLI/controller/charts and provisioned provider | `v0.22.0` / `400c24fb` | [Native site lock](../inputs/catalogs/nvke/native-site/pins.lock.yaml) |
 | OS, agent and kubeadm | `v0.22.0` / `400c24fb` | [Shared release OS lock](../inputs/catalogs/node-images/release/pins.lock.yaml) |
-| Profiles and runbooks | `v0.22.0` / `400c24fb` | [Native profiles lock](../inputs/catalogs/controller-profiles/native-nvidia-arm64/pins.lock.yaml) |
+| Profiles and runbooks | `v0.22.0` / `400c24fb` | [Native profiles lock](../inputs/catalogs/controller-profiles/native-nvidia/pins.lock.yaml) |
 | Upstream SPIRE/TPM agent packaging | `v0.22.0` / `400c24fb` | [Shared release OS lock](../inputs/catalogs/node-images/release/pins.lock.yaml) |
 | NVIDIA OVN image/chart | [`8af51273`](https://github.com/dsx-ai-factory/ovn-kubernetes/commit/8af51273d52dfa07454435d18d37230e582d797a), 2.4.2 | [Native NVIDIA overlay](../inputs/catalogs/node-images/variants/native-nvidia.json) |
 

@@ -33,7 +33,7 @@ Former paths below were relative to `definitions/` at upstream commit
 | `nvke-local-dev-arm64/site-catalog` | [`nvke/local-site-arm64`](nvke/local-site-arm64/registry.yaml) | Local CLI, controller and chart source/interface baseline |
 | `nvke-nightly-arm64/site-catalog` | [`nvke/nightly-site-arm64`](nvke/nightly-site-arm64/registry.yaml) | Nightly site producers aligned with the selected downstream suite |
 | `nvke-m2/release-catalog` | [`nvke/release-components`](nvke/release-components/registry.yaml) | Mixed CAPNICo, NKTP, reference profiles and runtime-image cohort awaiting a deliberate split |
-| `nvke-local-dev-arm64/capnico-catalog` | [`capnico/local-arm64`](capnico/local-arm64/registry.yaml) | Local/nightly native CAPNICo producer |
+| `nvke-local-dev-arm64/capnico-catalog` | [`capnico/local`](capnico/local/registry.yaml) | Local/nightly native CAPNICo producer |
 | `nvke-m2/os-catalog` | [`node-images/release`](node-images/release/registry.yaml) | Plain/FDE disk roots and complete material closure |
 | `nvke-os/catalog` | [`node-images/diagnostic`](node-images/diagnostic/registry.yaml) | Existing plain-disk diagnostic baseline |
 | `nvke-ovn-source/catalog` | [`ovn-nvidia`](ovn-nvidia/registry.yaml) | NVIDIA OVN standalone image/chart and package producers |
@@ -84,8 +84,8 @@ ordered NVIDIA and native KVM overlays. Their other selections are:
 | Catalog | Contract |
 |---|---|
 | [`node-images/variants/native-local-kvm.json`](node-images/variants/native-local-kvm.json) | Native demo selection over the shared release catalog: agent stamp, MAC-stable DHCP staging and native KVM settings |
-| [`nvke/native-site-arm64`](nvke/native-site-arm64/registry.yaml) | Source-aligned CLI, controller, provisioned provider and chart producers; acquired deployment charts derived from the same source pin set |
-| [`controller-profiles/native-nvidia-arm64`](controller-profiles/native-nvidia-arm64/registry.yaml) | Unchanged upstream config profiles and runbooks; releases are registered by the consumer |
+| [`nvke/native-site`](nvke/native-site/registry.yaml) | Source-aligned CLI, controller, provisioned provider and chart producers; acquired deployment charts derived from the same source pin set |
+| [`controller-profiles/native-nvidia`](controller-profiles/native-nvidia/registry.yaml) | Unchanged upstream config profiles and runbooks; releases are registered by the consumer |
 | [`runtime-dependencies`](runtime-dependencies/registry.yaml) | Shared release and native demo runtime acquisitions from the same NVKE deployment selection |
 | [`kubernetes-conformance/`](kubernetes-conformance/hydrophone/registry.yaml) | Hydrophone (with its bounded-download patch), kubectl and conformance/BusyBox image producers shared by the [conformance tool Definitions](../definitions/kubernetes-conformance-arm64/README.md) and the native conformance demo |
 
