@@ -155,7 +155,7 @@ func TestNightlyDispatchesGeneratedProducerBeforeNativeConsumer(t *testing.T) {
 		if step.With["repository"] == "dsx-ai-factory/nvke" {
 			t.Fatal("artifact consumer must use the source-owned installer, not a second NVKE checkout")
 		}
-		if step.Uses == "./.github/nvkr-run/actions/ci-download" {
+		if strings.HasPrefix(step.Uses, "./.github/nvkr-run") && strings.HasSuffix(step.Uses, "/actions/ci-download") {
 			t.Fatal("the Go handoff owner restores and authenticates private inputs; do not add a redundant workflow download")
 		}
 		deadline = deadline || strings.Contains(step.Run, "355 * 60") && strings.Contains(step.Run, "NVKR_JOB_DEADLINE")
