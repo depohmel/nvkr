@@ -321,7 +321,7 @@ func checkNativePublishedImage(output lifecycle.Artifact, exported delivery.Publ
 }
 
 func (inputs *nativePublicationInputs) prepareImages(ctx context.Context, publication *delivery.Publication, assets *NativeAssets) error {
-	capnico, err := nativeCAPNICoReference(ctx, assets.Installer)
+	capnico, err := assets.prepareCAPNICoImport(ctx)
 	if err != nil {
 		return err
 	}
@@ -339,9 +339,6 @@ func (inputs *nativePublicationInputs) prepareImages(ctx context.Context, public
 	for _, role := range slices.Sorted(maps.Keys(roles)) {
 		output := inputs.outputs[roles[role]]
 		alias := nativePublicationImageAlias(role, output.Digest, capnicoTag.Context().Name())
-		if role == "capnico" {
-			assets.importTags[role] = capnico
-		}
 		archive := filepath.Join(assets.Files, role+".tar")
 		exported, err := publication.ExportImage(ctx, output.Name, alias, "linux/"+inputs.arch, archive)
 		if err != nil {

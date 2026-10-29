@@ -6,15 +6,63 @@ package nvkedemo
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strconv"
+	"strings"
 	"time"
 
 	authored "github.com/dsx-ai-factory/nvkr/pkg/nvkr/definition"
 	e "github.com/dsx-ai-factory/nvkr/pkg/nvkr/errors"
 	"github.com/dsx-ai-factory/nvkr/pkg/nvkr/factory"
 )
+
+// AdmitDemoBuild checks static lane and default-input support without starting
+// tools, authentication, progress, or producers. Runtime owners recheck the
+// selected inputs and execution capabilities at their own boundaries.
+func AdmitDemoBuild(ctx context.Context, cfg BuildConfig) error {
+	if ctx == nil {
+		return e.New(e.CodeUsage, "demo build admission requires a context")
+	}
+	if err := ctx.Err(); err != nil {
+		return e.Wrap(e.CodeTimeout, err, "demo build admission")
+	}
+	if err := validateAutomaticQualification(cfg.QualifyLocal, cfg.Prepared, cfg.QualificationPolicy, cfg.Qualification); err != nil {
+		return err
+	}
+	qualification := cfg.Prepared || cfg.QualifyLocal || cfg.QualificationPolicy != ""
+	if cfg.Conformance && qualification {
+		return e.New(e.CodeEngineCapability, "demo conformance selects a fresh unsigned diagnostic Run; prepared or local-signing combinations are not admitted")
+	}
+	if qualification {
+		if err := admitQualificationHost(runtime.GOOS + "/" + runtime.GOARCH); err != nil {
+			return err
+		}
+	}
+	if err := validateSelectedBuild(cfg.Definition, cfg.Environment, cfg.NVKR, qualification); err != nil {
+		return err
+	}
+	if qualification || cfg.Definition != "" {
+		return nil
+	}
+	selected, environment, err := LocalArtifactInputsForPlatform(cfg.Network, cfg.Conformance, runtime.GOOS+"/"+runtime.GOARCH)
+	if err != nil {
+		return err
+	}
+	repo, err := resolveExisting(cfg.Repository)
+	if err != nil {
+		return e.Wrap(e.CodeUsage, err, "demo build repository")
+	}
+	if _, err = authored.LoadDefinition(ctx, filepath.Join(repo, selected)); err == nil {
+		_, err = authored.LoadEnvironment(ctx, filepath.Join(repo, environment))
+	}
+	if errors.Is(err, os.ErrNotExist) {
+		return e.Wrap(e.CodeEngineCapability, err, "default demo BUILD inputs are unavailable for %s", runtime.GOOS+"/"+runtime.GOARCH)
+	}
+	return err
+}
 
 // Explicit inputs retain their owning NVKR producers, source pins and native
 // dependency bindings. The demo neither rewrites them nor runs Packer itself.
@@ -74,21 +122,17 @@ func definitionIncludesNativeTools(definition authored.Definition, platform stri
 	if err != nil {
 		return false
 	}
-	want := map[string]bool{host: false}
+	want := map[string]string{host: platform}
+	_, arch, _ := strings.Cut(platform, "/")
 	for _, companion := range siteStartupToolBundles(platform) {
-		want[companion.name] = false
+		want[companion.name] = "linux/" + arch
 	}
 	for _, output := range definition.Outputs {
-		if _, needed := want[output.Name]; needed && output.Platform == platform && output.Format == authored.OutputExecutable {
-			want[output.Name] = true
+		if expected, needed := want[output.Name]; needed && output.Platform == expected && output.Format == authored.OutputExecutable {
+			delete(want, output.Name)
 		}
 	}
-	for _, found := range want {
-		if !found {
-			return false
-		}
-	}
-	return true
+	return len(want) == 0
 }
 
 func selectedBuildIncludesNativeTools(ctx context.Context, cfg BuildConfig, platform string) (bool, error) {

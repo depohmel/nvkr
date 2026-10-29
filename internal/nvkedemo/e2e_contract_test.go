@@ -130,7 +130,7 @@ func TestNativeE2EConfigurationSelectsSuiteBeforeBuild(t *testing.T) {
 			}
 			// The Go test's temporary executable must not select Mac's adjacent
 			// nvkr; the existing native distribution owns that bootstrap path.
-			selected, err := defaultMacBuild(&build, "darwin/arm64", build.DemoExecutable)
+			selected, err := defaultNativeBuild(&build, "darwin/arm64", build.DemoExecutable)
 			if err != nil || !selected || build.NVKR != filepath.Join(filepath.Dir(helper), "nvkr") || build.Definition == "" || build.Environment != "inputs/environments/local-native-mac.json" {
 				t.Fatalf("native Mac distribution selection: %+v error=%v", build, err)
 			}

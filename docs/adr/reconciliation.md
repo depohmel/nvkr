@@ -153,6 +153,21 @@ tool preparation. Repository-contained input paths and local-only Environments a
 preparation; controlled tests reject changed invocations, escaped paths and publication requests.
 Default Linux bootstrap and qualification remain separate from explicit input preparation. This interface
 and its real native Plan preparation check do not establish a complete Mac BUILD-to-DEPLOY result.
+Ordinary Mac and Linux BUILD now share default input selection and local toolchain
+preparation. The demo delegates platform-domain admission to NVKR's target owner,
+derives Linux input and conformance-output names from that platform, and uses one
+host-tool membership/alias path. Platform-specific virtualization prerequisites
+remain backend checks. BUILD and E2E share static build admission before
+presentation; E2E invokes it before runtime probes, narration or sudo. Missing default input files return a
+capability refusal; qualification retains its Linux ARM64 host admission before
+the launcher. Shared
+prerequisite admission checks command availability,
+Buildx and a matching Linux Docker daemon before preparation state. Empty guest
+architecture bindings are refused rather than assigned an ARM64 default. Optional
+conformance admits the exact named host tools and Linux suite outputs from the
+replayed completed Run before deployment, with payload authentication retained by
+the conformance owner. Matching AMD64 upstream/conformance default Definitions
+are not supplied; this cleanup does not establish a new runtime acceptance result.
 The normal Mac BUILD additionally selects the same committed product Definition and its Mac Environment,
 discovers the documented installed native dependencies, and delegates bundle/input preparation to those
 existing NVKR owners. It reuses the Linux utility-image builder and shared catalog-scope/relative-input
@@ -199,8 +214,20 @@ evidence bindings when their exact manifest bytes are shared. Conflicting aliase
 and duplicate direct descriptors remain rejected; physical closure accounting uses distinct digests.
 Round-trip and rejection contracts cover this case; they do not prove a full native conformance run.
 
-The shared native demo has an opt-in Mac/Linux ARM64 conformance hook using
+The committed native conformance demo inputs target Mac/Linux ARM64 and use
 matching suite/tool outputs from the same fresh artifact Run.
+
+The ordinary local demo also admits Linux AMD64 KVM. Default AMD64 input selection
+uses the shared catalogs with architecture-specific acquired binaries and disk
+firmware. Host/site tools are selected in the artifact Run and reused without a
+second build. Default AMD64 and Mac preparation share the existing local
+toolchain bootstrap and catalog-scoped substitutions; only Mac binds installed
+native Packer dependencies. The consumer binds each disk, image and executable bundle to its
+replayed Plan platform; bootstrap, imports, identity inputs and readiness use the
+same architecture. AMD64 default conformance inputs are not supplied; shared selectors
+now use the selected architecture. Local qualification retains its separate ARM64 lane.
+Contract tests and compiled input validation are distinct from a real AMD64 KVM
+build/deployment result, which is not yet recorded.
 
 The shared native startup imports the ordinary named OVN image under its exact native digest and
 projects matching chart values after package installation and before agent startup;
@@ -3331,7 +3358,10 @@ native owners consume the authenticated CLI, images, disk and installer without
 a second product build or fabricated local Run. They bootstrap the site VM through
 a temporary kind/Lima backend, check the live API and Ready node, and join owned
 cleanup. Tenant workload/DNS checks remain manual opt-ins. Local `TestEndToEnd`
-retains its separate build-and-test developer flow.
+retains its separate fresh-build developer flow, with site smoke by default and
+tenant/conformance checks selected explicitly. Its host-matched Linux AMD64
+defaults do not add an AMD64 generated nightly producer or a recorded runtime
+acceptance result.
 
 Local contracts cover exact producer/provider/artifact joins, private CI carrier
 restoration, frozen source selection, publication receipts and source/installer

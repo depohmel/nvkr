@@ -37,7 +37,7 @@ func nativeInstallerFixture(t *testing.T, installer, commit, version string) *na
 	}
 	spec := []byte(nativeInstallerSiteSpecFixture)
 	writeTenantFixture(t, filepath.Join(installer, nativeSiteSpecPath), spec, 0600)
-	return &nativeInstallerSelection{commit: commit, capiVersion: version, versionsDigest: plainSHA(versions), siteSpecDigest: plainSHA(spec)}
+	return &nativeInstallerSelection{arch: "arm64", commit: commit, capiVersion: version, versionsDigest: plainSHA(versions), siteSpecDigest: plainSHA(spec)}
 }
 
 func TestNativeCAPIRechecksSelectedMetadataBeforeCommands(t *testing.T) {
@@ -111,7 +111,7 @@ func TestNativeCAPIInitSelectsAllThreeProvidersAndWaits(t *testing.T) {
 
 func nativeCapturedToolsFixture(t *testing.T) (string, string, *factory.Plan) {
 	t.Helper()
-	plan, inputs, err := factory.CaptureCompileFiles(t.Context(), filepath.Join("..", ".."), "inputs/definitions/demo/native-linux/definition-tools.json", "inputs/environments/local-native-linux.json", "native-selection-test")
+	plan, inputs, err := factory.CaptureCompileFiles(t.Context(), filepath.Join("..", ".."), "inputs/definitions/demo/tools/linux-arm64.json", "inputs/environments/local-arm64-kvm.json", "native-selection-test")
 	if err != nil {
 		t.Fatal(err)
 	}

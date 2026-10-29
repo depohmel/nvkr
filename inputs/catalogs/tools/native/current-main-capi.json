@@ -19,5 +19,5 @@
   },
   "kind": "CatalogOverlay",
   "name": "nvke-native-main-capi",
-  "requiresCatalogDigest": "sha256:45aa39bb6c50710e49d1ab77e04e3c057448d71b47e045cd75c4d70da27293de"
+  "requiresCatalogDigest": "sha256:1608c17013f82834a73f5bc380000bb65db4e59e35ec6c8504266b5aa06f7042"
 }

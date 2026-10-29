@@ -4,6 +4,7 @@
 package nvkedemo
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"os"
@@ -26,18 +27,17 @@ func nativeCapturedBuildPlanFixture(t *testing.T) *factory.Plan {
 	return plan
 }
 
-func TestNativeBuildHostAdmissionRequiresExplicitAMDInputs(t *testing.T) {
+func TestNativeBuildHostAdmission(t *testing.T) {
 	for _, row := range []struct {
 		platform string
-		explicit bool
 		valid    bool
 	}{
-		{"linux/arm64", false, true}, {"darwin/arm64", false, true},
-		{"linux/amd64", true, true}, {"linux/amd64", false, false},
-		{"darwin/amd64", true, false}, {"windows/arm64", true, false},
+		{"linux/arm64", true}, {"darwin/arm64", true},
+		{"linux/amd64", true},
+		{"darwin/amd64", false}, {"windows/arm64", false},
 	} {
-		t.Run(row.platform+map[bool]string{false: "/default", true: "/explicit"}[row.explicit], func(t *testing.T) {
-			err := admitNativeBuildHost(row.platform, row.explicit)
+		t.Run(row.platform, func(t *testing.T) {
+			err := admitNativeBuildHost(row.platform)
 			if (err == nil) != row.valid {
 				t.Fatalf("error=%v", err)
 			}
@@ -71,6 +71,20 @@ func TestSelectedBuildReusesOnlyCompleteNativeToolOutputs(t *testing.T) {
 				t.Fatalf("reuse=%v, want %v", got, row.valid)
 			}
 		})
+	}
+}
+
+func TestSelectedBuildReusesDarwinHostAndLinuxSiteTools(t *testing.T) {
+	doc := definition.Definition{Outputs: []definition.DefinitionOutput{
+		{Name: "native-tools-darwin-arm64", Platform: "darwin/arm64", Format: definition.OutputExecutable},
+		{Name: "site-startup-tools-arm64", Platform: "linux/arm64", Format: definition.OutputExecutable},
+	}}
+	if !definitionIncludesNativeTools(doc, "darwin/arm64") {
+		t.Fatal("matching Darwin host and Linux companion would be rebuilt")
+	}
+	doc.Outputs[1].Platform = "darwin/arm64"
+	if definitionIncludesNativeTools(doc, "darwin/arm64") {
+		t.Fatal("Darwin executable was selected for the Linux site")
 	}
 }
 
@@ -299,6 +313,22 @@ func TestSelectedBuildResolvesInputsWithinRepository(t *testing.T) {
 			if _, err := os.Stat(filepath.Join(repo, ".nvkr")); !os.IsNotExist(err) {
 				t.Fatal("input admission created build state")
 			}
+		})
+	}
+}
+
+func TestDemoBuildAdmissionContextBeforeInputs(t *testing.T) {
+	canceled, cancel := context.WithCancel(t.Context())
+	cancel()
+	for _, tc := range []struct {
+		name string
+		ctx  context.Context
+		code e.Code
+	}{
+		{"nil", nil, e.CodeUsage}, {"canceled", canceled, e.CodeTimeout},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			assertNightlyCode(t, AdmitDemoBuild(tc.ctx, BuildConfig{Repository: "/must-not-read"}), tc.code)
 		})
 	}
 }

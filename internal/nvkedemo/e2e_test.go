@@ -32,7 +32,7 @@ func TestEndToEnd(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := admitNativeBuildHost(runtime.GOOS+"/"+runtime.GOARCH, build.Definition != ""); err != nil {
+	if err := admitNativeBuildHost(runtime.GOOS + "/" + runtime.GOARCH); err != nil {
 		t.Fatal(err)
 	}
 	workBudget := 8 * time.Hour

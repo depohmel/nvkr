@@ -144,3 +144,43 @@ func TestNativeAMD64AcquisitionsKeepReleaseAndPlatform(t *testing.T) {
 		t.Fatal("reviewed CAPI init parents changed")
 	}
 }
+
+func TestNativeHelmVendorPinsMatchTheSharedTools(t *testing.T) {
+	site, err := LoadContext(t.Context(), Dir("../../../inputs/catalogs/nvke/native-site-arm64"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	tools, err := LoadContext(t.Context(), Dir("../../../inputs/catalogs/tools/native"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, component := range []string{"nvke-controller-chart", "nktp-chart"} {
+		t.Run(component, func(t *testing.T) {
+			command := site.Components[component].VendorCommand
+			if len(command) != 3 {
+				t.Fatal("expected the source-owned vendor script")
+			}
+			for _, tool := range []string{"helm-linux", "helm-linux-amd64"} {
+				selected := tools.Components[tool]
+				if selected.Prebuilt == nil || selected.Prebuilt.Executable == nil {
+					t.Fatal("shared Helm acquisition is absent")
+				}
+				pin := selected.Prebuilt.Executable
+				_, arch, _ := strings.Cut(selected.Platforms[0], "/")
+				function, _, found := strings.Cut(command[2], `case "$(uname -m)" in`)
+				if !found {
+					t.Fatal("vendor Helm digest function is absent")
+				}
+				probe := strings.ReplaceAll(function, "{{.Arch}}", arch) + `helm_digest "$1"`
+				out, err := exec.CommandContext(t.Context(), "sh", "-eu", "-c", probe, "helm-digest-test", arch).CombinedOutput()
+				if err != nil || string(out) != strings.TrimPrefix(pin.ArchiveDigest, "sha256:") || !strings.Contains(command[2], "helm-"+selected.Tag+"-linux-") {
+					t.Fatalf("vendor Helm digest for %s diverged from the shared tool pin: %s %v", tool, out, err)
+				}
+			}
+			cmd := exec.CommandContext(t.Context(), "sh", "-n", "-c", strings.ReplaceAll(command[2], "{{.Arch}}", "amd64"))
+			if out, err := cmd.CombinedOutput(); err != nil {
+				t.Fatalf("vendor shell syntax: %s %v", out, err)
+			}
+		})
+	}
+}

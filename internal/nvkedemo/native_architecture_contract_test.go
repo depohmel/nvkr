@@ -12,9 +12,67 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/dsx-ai-factory/nvkr/pkg/nvkr/definition"
 	"github.com/dsx-ai-factory/nvkr/pkg/nvkr/delivery"
 	nvkrerr "github.com/dsx-ai-factory/nvkr/pkg/nvkr/errors"
 )
+
+func TestMissingNativeArchitectureDoesNotDefaultToARM64(t *testing.T) {
+	cfg := startupDescription()
+	cfg.arch = ""
+	data, err := SiteStartupUserData(startupTestContext(t), cfg)
+	assertNightlyCode(t, err, nvkrerr.CodeEngineCapability)
+	if data != "" {
+		t.Fatal("missing architecture emitted executable startup")
+	}
+	attempt := nativeSiteAttempt{}
+	assertNightlyCode(t, attempt.prepareBoot(t.Context(), "http://172.30.0.1/disk.qcow2", "http://172.30.0.1"), nvkrerr.CodeEngineCapability)
+	if attempt.boot != nil {
+		t.Fatal("missing architecture selected an ARM64 boot fixture")
+	}
+	_, err = extractNativeInstaller(t.Context(), "/must-not-be-read", t.TempDir(), &nativeInstallerSelection{})
+	assertNightlyCode(t, err, nvkrerr.CodeVerifyFailed)
+}
+
+func TestDefaultDemoInputsBindHostAndGuestArchitecture(t *testing.T) {
+	for _, platform := range []string{"linux/arm64", "linux/amd64", "darwin/arm64"} {
+		t.Run(platform, func(t *testing.T) {
+			path, environmentPath, err := LocalArtifactInputsForPlatform("ovn", false, platform)
+			if err != nil {
+				t.Fatal(err)
+			}
+			doc, err := definition.LoadDefinition(t.Context(), filepath.Join("../..", path))
+			if err != nil {
+				t.Fatal(err)
+			}
+			environment, err := definition.LoadEnvironment(t.Context(), filepath.Join("../..", environmentPath))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(environment.ExecutionClasses) == 0 || string(environment.ExecutionClasses[0].HostPlatform) != platform {
+				t.Fatalf("host %s selected a foreign Environment", platform)
+			}
+			_, arch, _ := strings.Cut(platform, "/")
+			disk, err := selectedDiskOutputForArchitecture("ovn", arch)
+			if err != nil {
+				t.Fatal(err)
+			}
+			foundDisk := false
+			for _, output := range doc.Outputs {
+				if output.Platform != "linux/"+arch {
+					t.Fatalf("%s selected foreign output %s/%s", platform, output.Name, output.Platform)
+				}
+				foundDisk = foundDisk || output.Name == disk && output.Format == definition.OutputDiskImage
+			}
+			if !foundDisk {
+				t.Fatalf("%s omitted its selected disk %s", platform, disk)
+			}
+			if platform == "linux/amd64" && !definitionIncludesNativeTools(doc, platform) {
+				t.Fatal("default AMD64 build would rebuild or omit native tools")
+			}
+		})
+	}
+}
 
 func TestNativeArchitectureDomainObservation(t *testing.T) {
 	if err := nativeLinuxDomainPlatform(`<domain type="kvm"><os><type arch="x86_64">hvm</type></os><devices><tpm/></devices></domain>`, "amd64"); err != nil {
@@ -81,7 +139,7 @@ func TestNativeArchitectureImportsAndNodeReadiness(t *testing.T) {
 	if accelerator, err := nativeAccelerator("linux/amd64", ""); accelerator != "kvm" || err != nil {
 		t.Fatalf("AMD default accelerator: %q %v", accelerator, err)
 	}
-	if definition, _, bundle, _, err := nativeToolSelection("linux/amd64"); err != nil || definition != "inputs/definitions/demo/amd64-nvidia-local-kvm.json" || bundle != "native-tools-linux-amd64" {
+	if definition, _, bundle, _, err := nativeToolSelection("linux/amd64"); err != nil || definition != "inputs/definitions/demo/tools/linux-amd64.json" || bundle != "native-tools-linux-amd64" {
 		t.Fatalf("explicit local AMD tools unavailable: %v", err)
 	}
 	if members, err := nativeRuntimeToolMembers("linux/amd64"); len(members) == 0 || err != nil {
