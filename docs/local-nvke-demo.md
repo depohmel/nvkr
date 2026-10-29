@@ -660,7 +660,7 @@ Ordinary tests skip this operation unless `NVKR_NVKE_E2E=1`. The scoped site
 owner handles cleanup after success, failure or cancellation; unjoined work
 retains its dependent controls.
 
-The default inputs support native Mac and Ubuntu ARM64. The test still needs
+The environment-only example below is for Ubuntu ARM64 with KVM. The test needs
 `bin/nvke-demo` from the same reviewed NVKR revision for its private host helpers;
 it does not launch the `nvke-demo e2e` CLI. From the NVKR checkout, use fresh
 attempt and output paths:
@@ -671,6 +671,19 @@ export NVKR_NVKE_E2E_REPO="$(pwd -P)"
 export NVKR_NVKE_E2E_OUT="$PWD/.nvkr/native-test-01"
 export NVKR_NVKE_E2E_ATTEMPT=native-test-01
 # Optional: NVKR_NVKE_E2E_BINARY selects the same-revision helper at another path.
+GOTOOLCHAIN=local go test ./internal/nvkedemo -run '^TestEndToEnd$' -count=1 -timeout 10h
+```
+
+On Mac, use `NVKR_NVKE_E2E_CONFIG` with `run.accelerator: tcg` for the retained
+64K image. An empty accelerator selects HVF, which cannot boot this image as
+described in the [Mac setup](#4-build-and-run-the-demo). Adapt the complete
+[version-1 configuration](../demos/local-nvke.yaml): edit its absolute paths,
+choose fresh `build.attempt` and `run.out`, and add `accelerator: tcg` to its
+existing `run` mapping. Then run:
+
+```sh
+export NVKR_NVKE_E2E=1
+export NVKR_NVKE_E2E_CONFIG=/absolute/path/to/native-mac.yaml
 GOTOOLCHAIN=local go test ./internal/nvkedemo -run '^TestEndToEnd$' -count=1 -timeout 10h
 ```
 
@@ -697,7 +710,6 @@ For native Linux AMD64, use the configuration option with all three explicit
 build selections: `build.definition: inputs/definitions/demo/amd64-nvidia-local-kvm.json`,
 `build.environment: inputs/environments/local-amd64-kvm.json` and
 `build.nvkr` pointing to the existing NVKR executable. Linux requires KVM.
-On Mac, set `run.accelerator: tcg` for the retained 64K image as described above.
 `build.nvkeClone` optionally supplies local source objects; without a configuration,
 the corresponding input is `NVKE_LOCAL_CLONE`.
 

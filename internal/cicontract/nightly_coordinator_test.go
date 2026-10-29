@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"os"
 	"os/exec"
+	"path"
 	"path/filepath"
 	"reflect"
 	"strings"
@@ -155,7 +156,7 @@ func TestNightlyDispatchesGeneratedProducerBeforeNativeConsumer(t *testing.T) {
 		if step.With["repository"] == "dsx-ai-factory/nvke" {
 			t.Fatal("artifact consumer must use the source-owned installer, not a second NVKE checkout")
 		}
-		if strings.HasPrefix(step.Uses, "./.github/nvkr-run") && strings.HasSuffix(step.Uses, "/actions/ci-download") {
+		if nightlyRuntimeDownloadsPrivateInputs(step) {
 			t.Fatal("the Go handoff owner restores and authenticates private inputs; do not add a redundant workflow download")
 		}
 		deadline = deadline || strings.Contains(step.Run, "355 * 60") && strings.Contains(step.Run, "NVKR_JOB_DEADLINE")
@@ -176,6 +177,66 @@ func TestNightlyDispatchesGeneratedProducerBeforeNativeConsumer(t *testing.T) {
 		t.Fatal("consumer lost exact private frozen inputs, direct Go test or owned cleanup reserve")
 	}
 }
+
+func nightlyRuntimeDownloadsPrivateInputs(step nightlyCoordinatorStep) bool {
+	if _, forwardsReader := step.With["nvkr-ci-storage-read-token"]; forwardsReader {
+		return true
+	}
+	namespace, action, found := strings.Cut(path.Clean(step.Uses), "/actions/")
+	bundle := path.Base(namespace)
+	if !found || path.Dir(namespace) != ".github" || (bundle != "nvkr-run" && bundle != "nvkr-dev" && !strings.HasPrefix(bundle, "nvkr-run-")) {
+		return false
+	}
+	switch action {
+	case "ci-download", "ci-bootstrap-download", "shared/download-carriers":
+		return true
+	default:
+		return false
+	}
+}
+
+func TestNightlyRuntimePrivateDownloadGuard(t *testing.T) {
+	for _, uses := range []string{
+		"./.github/nvkr-run/actions/ci-download",
+		"./.github/nvkr-run/actions/ci-bootstrap-download",
+		"./.github/nvkr-run/actions/shared/download-carriers",
+		"./.github/nvkr-run-nvke-nightly-arm64/actions/ci-download",
+		"./.github/nvkr-run-nvke-nightly-arm64/actions/ci-bootstrap-download",
+		"./.github/nvkr-run-nvke-nightly-arm64/actions/shared/download-carriers",
+		"./.github/nvkr-dev/actions/shared/download-carriers",
+	} {
+		for _, suffix := range []string{"", "/"} {
+			t.Run(uses+suffix, func(t *testing.T) {
+				if !nightlyRuntimeDownloadsPrivateInputs(nightlyCoordinatorStep{Uses: uses + suffix}) {
+					t.Fatal("generated private download escaped the runtime guard")
+				}
+			})
+		}
+	}
+	for _, test := range []struct {
+		name    string
+		step    nightlyCoordinatorStep
+		blocked bool
+	}{
+		{"forwarded reader", nightlyCoordinatorStep{Uses: "./.github/other/action", With: map[string]any{"nvkr-ci-storage-read-token": "synthetic-read-token"}}, true},
+		{"empty reader", nightlyCoordinatorStep{Uses: "./.github/other/action", With: map[string]any{"nvkr-ci-storage-read-token": ""}}, true},
+		{"null reader", nightlyCoordinatorStep{With: map[string]any{"nvkr-ci-storage-read-token": nil}}, true},
+		{"metadata download", nightlyCoordinatorStep{Uses: "actions/download-artifact@pinned-fixture"}, false},
+		{"upload interface", nightlyCoordinatorStep{Uses: "./.github/nvkr-run/actions/ci-upload"}, false},
+		{"toolchain reader", nightlyCoordinatorStep{Uses: "./.github/nvkr-run/actions/shared/prepare-images", With: map[string]any{"nvkr-toolchain-read-token": "synthetic-read-token"}}, false},
+		{"Go handoff owner", nightlyCoordinatorStep{Run: "go test ./internal/nvkedemo", Env: map[string]string{"NVKR_CI_STORAGE_TOKEN": "synthetic-read-token"}}, false},
+		{"unrelated download action", nightlyCoordinatorStep{Uses: "./.github/other/actions/ci-download"}, false},
+		{"namespace lookalike", nightlyCoordinatorStep{Uses: "./.github/nvkr-runner/actions/ci-download"}, false},
+		{"nested directory", nightlyCoordinatorStep{Uses: "./.github/nvkr-run-extra/nested/actions/ci-download"}, false},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			if got := nightlyRuntimeDownloadsPrivateInputs(test.step); got != test.blocked {
+				t.Fatalf("blocked=%v, want %v", got, test.blocked)
+			}
+		})
+	}
+}
+
 func TestNightlySelectionExecutesOnlySupportedNVIDIAConsumer(t *testing.T) {
 	workflow := nightlyCoordinatorFixture(t)
 	var script string
