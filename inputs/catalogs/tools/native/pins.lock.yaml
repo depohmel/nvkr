@@ -7,6 +7,12 @@ artifacts:
       arm64: sha256:260479a1cfaf304c4c20da7f8405d3ce313513dcd534bb743257bdd2fe0f3e2d
     imageParentDigest: sha256:294b683cb724975bec92580e1e685676bd4b50bda910ddb8c51d4cabeaec77e6
     tag: v0.22.0
+  native-capi-exec-init-image-main:
+    digests:
+      amd64: sha256:c26612752c78b18faacd63c7d50f4592c2e7b0f25e0e20e82bd74e465c57ab0d
+      arm64: sha256:e311ae748be7f56ae5cba304bc488f0786df68ee507513f654a5cc8597cffb42
+    imageParentDigest: sha256:be2656061b536c1883c4034790e21d0a09c5aaaf51968b89368a3c0371ea2c9a
+    tag: v0.22.0
   native-capi-exec-plugin-image:
     digests:
       amd64: sha256:ef6f2f3c6eb41017fec9b5bdfeb87bea402d606606e16b788305dc9557c85892
@@ -192,11 +198,11 @@ pins:
     tag: v0.22.0
     treeHash: f3afc02f5c92f4aacda3a1655836a91bef093bfe
   nvkr-site-identity:
-    commit: 8aba19abf8a2b74dbd14f8a6abed608e02e8b744
+    commit: d81f3ccea0cfe4e46203b7a1d477095415c37d0e
     goVersion: 1.27.3
-    sourceDateEpoch: 1792621677
-    tag: 8aba19abf8a2b74dbd14f8a6abed608e02e8b744
-    treeHash: e4264190f52f98ef70ca9daa4b536306ec030aa9
+    sourceDateEpoch: 1793286210
+    tag: d81f3ccea0cfe4e46203b7a1d477095415c37d0e
+    treeHash: 98eac3bdb5c4ff713c512a31f92b2fc23751d9d2
   oras:
     commit: 210747c29c1d38732b3194878dfd8b5a6b9ad7eb
     sourceDateEpoch: 1783708065

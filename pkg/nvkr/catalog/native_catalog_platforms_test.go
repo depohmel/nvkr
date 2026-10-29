@@ -92,7 +92,7 @@ func TestNativeCatalogsShareLinuxArchitectures(t *testing.T) {
 		{"nvke/native-site", []string{"nvkectl", "nvke-controller", "cluster-api-provider-provisioned", "nvke-controller-chart", "nktp-chart"}},
 		{"capnico/local", []string{"capnico-controller"}},
 		{"controller-profiles/native-nvidia", []string{"nvke-local-profiles"}},
-		{"tools/native", []string{"nerdctl", "nico-sim", "nico-simctl", "nvke-installer-sources", "nvkectl", "nvkr-site-identity-helper", "native-capi-exec-init-image", "native-capi-exec-plugin-image", "native-workload-image"}},
+		{"tools/native", []string{"nerdctl", "nico-sim", "nico-simctl", "nvke-installer-sources", "nvkectl", "nvkr-site-identity-helper", "native-capi-exec-init-image", "native-capi-exec-init-image-main", "native-capi-exec-plugin-image", "native-workload-image"}},
 	} {
 		t.Run(tc.directory, func(t *testing.T) {
 			cat, err := LoadContext(t.Context(), Dir(filepath.Join("../../../inputs/catalogs", tc.directory)))
@@ -139,9 +139,9 @@ func TestNativeAMD64AcquisitionsKeepReleaseAndPlatform(t *testing.T) {
 			}
 		})
 	}
-	selected := cat.Components["native-capi-exec-init-image"]
-	if selected.Prebuilt.ImageParentDigest != "sha256:294b683cb724975bec92580e1e685676bd4b50bda910ddb8c51d4cabeaec77e6" {
-		t.Fatal("release CAPI init parent changed")
+	legacy, current := cat.Components["native-capi-exec-init-image"], cat.Components["native-capi-exec-init-image-main"]
+	if legacy.Prebuilt.ImageParentDigest != "sha256:294b683cb724975bec92580e1e685676bd4b50bda910ddb8c51d4cabeaec77e6" || current.Prebuilt.ImageParentDigest != "sha256:be2656061b536c1883c4034790e21d0a09c5aaaf51968b89368a3c0371ea2c9a" {
+		t.Fatal("reviewed CAPI init parents changed")
 	}
 }
 

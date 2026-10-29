@@ -7,3 +7,10 @@ The [ARM64](../tools/linux-arm64.json) and [AMD64](../tools/linux-amd64.json) to
 The shared `run` and `e2e` commands use the same host bootstrap, deployment, tenant and workload checks on both hosts. Linux selects KVM, session libvirt and the scoped bridge owner; Mac selects vmnet with explicit TCG for the selected 64 KiB image. Native Linux networking does not borrow a Docker Kind subnet: its versioned journal represents host-originated bootstrap transport. The temporary container backend integration and full native Linux runtime parity remain under validation. The shared native site/tenant owner starts one site guest and the requested tenant guests: four guests with conformance (one tenant control plane and two workers).
 
 See the [native guide](../../../../docs/local-nvke-demo.md#native-linux-and-mac-path) for the supported inputs and validation limits. The standalone `guest` command validates one guest and local HTTP delivery, not a Kubernetes distribution.
+
+The complete local KVM Definitions [`../arm64-nvidia-local-kvm.json`](../arm64-nvidia-local-kvm.json)
+and [`../amd64-nvidia-local-kvm.json`](../amd64-nvidia-local-kvm.json) include the host and
+site-startup tool bundles in the same local Run as their images and disk. Both select the
+existing native NVKE, CAPNICo, controller-profile and tool catalogs. The AMD64 selection uses
+[`../../../environments/local-amd64-kvm.json`](../../../environments/local-amd64-kvm.json);
+these local inputs configure no registry publication or signing.

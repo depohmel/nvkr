@@ -221,6 +221,9 @@ func (plan Plan) validatePlanBuilds() error {
 // credential consumers. Plan validation binds these snapshots before admission.
 func (plan *Plan) catalogPinSetRepositories() map[string]bool {
 	repositories := map[string]bool{}
+	if plan.Environment.GitHubRuntimeSource != nil {
+		repositories[plan.Environment.GitHubRuntimeSource.Repository] = true
+	}
 	collect := func(snapshot *catalog.Catalog) {
 		if snapshot == nil {
 			return

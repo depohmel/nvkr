@@ -99,6 +99,9 @@ type Environment struct {
 	// GitHubRuntimePlan compiles current catalog pins at dispatch while retaining
 	// the reviewed named production workflow and its complete execution policy.
 	GitHubRuntimePlan bool `json:"githubRuntimePlan,omitempty"`
+	// GitHubRuntimeSource permits one exact repository revision to be frozen
+	// for this production runtime Plan; the coordinator selects the main commit.
+	GitHubRuntimeSource *GitHubRuntimeSource `json:"githubRuntimeSource,omitempty"`
 	// GitHubDevelopment admits branch-dispatched hosted builds and, when explicitly
 	// configured, isolated signed publications under a disposable attempt namespace.
 	GitHubDevelopment bool `json:"githubDevelopment,omitempty"`
@@ -281,6 +284,9 @@ func (environment Environment) Validate() error {
 	}
 	if environment.GitHubRuntimePlan && (environment.GitHubDevelopment || environment.GitHubBundle == "") {
 		return e.New(e.CodeEngineCapability, "githubRuntimePlan requires a named production githubBundle")
+	}
+	if err := environment.validateGitHubRuntimeSource(); err != nil {
+		return err
 	}
 	if err := ValidateGitHubBundleName(environment.GitHubBundle); err != nil {
 		return err

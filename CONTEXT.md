@@ -299,12 +299,13 @@ Qualified release-gate acceptance is deferred; no retained clearance implementat
 _Avoid_: Generic pass result, cluster qualification
 
 **Downstream test coordinator**:
-A separately authored repository CI adapter outside the NVKR product lifecycle
-that joins exact project producer Runs, consumes authenticated publication bytes
-and invokes NVKE's suite in a separate job. NVKE owns guest/cluster provisioning,
-assertions and teardown; the parent harness owns host admission, outer leases,
-disk service and network-control restoration. Its unsigned reports are diagnostics,
-not qualified conformance receipts or a seventh public lifecycle object (ADR-16/18).
+A separately authored repository CI workflow outside the NVKR product lifecycle.
+The nightly resolves one NVKE main commit, dispatches the existing generated
+producer, and consumes that Run's authenticated artifacts through native Go
+bootstrap/readiness tests. It currently uses the ARM64 NVIDIA target, without a
+second product build. VM, backend and network cleanup must join before success.
+Its unsigned outcomes are diagnostics, not release qualification or a seventh
+lifecycle object (ADR-16/18).
 _Avoid_: Nightly qualification, qualified runtime, product fleet operator
 
 **Clearance**:

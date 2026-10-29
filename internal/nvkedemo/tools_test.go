@@ -184,6 +184,7 @@ func TestToolPreparationRejectsBeforeWorkspaceWork(t *testing.T) {
 		code                    nvkrerr.Code
 	}{
 		{"unsupported", "windows/arm64", "test", 1, nvkrerr.CodeEngineCapability},
+		{"AMD empty attempt", "linux/amd64", "", 1, nvkrerr.CodeUsage},
 		{"empty attempt", "darwin/arm64", "", 1, nvkrerr.CodeUsage},
 		{"unsafe attempt", "darwin/arm64", "../test", 1, nvkrerr.CodeUsage},
 		{"jobs", "darwin/arm64", "test", 0, nvkrerr.CodeUsage},

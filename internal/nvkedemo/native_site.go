@@ -37,6 +37,7 @@ type NativeConfig struct {
 	Network, DemoExecutable string
 	conformance             *nativeConformanceConfig
 	Assets                  NativeAssetConfig
+	publication             *nativePublicationInputs
 	Cleanup, Walkthrough    bool
 	Progress                io.Writer
 }
@@ -115,7 +116,7 @@ func runNativeSite(ctx context.Context, cfg NativeConfig, use func(context.Conte
 	if err != nil {
 		return err
 	}
-	if cfg.Image == "" || cfg.Assets.RuntimeRun == "" {
+	if cfg.publication == nil && (cfg.Image == "" || cfg.Assets.RuntimeRun == "") {
 		return errors.New("require a local QCOW, explicit accelerator and completed runtime-image Run")
 	}
 	out, err := freshDestination(cfg.Out)
@@ -130,8 +131,10 @@ func runNativeSite(ctx context.Context, cfg NativeConfig, use func(context.Conte
 	if err := capacity.check(ctx, filepath.Dir(out), false, cfg.Progress); err != nil {
 		return err
 	}
-	if _, err := DigestFile(ctx, cfg.Image); err != nil {
-		return err
+	if cfg.publication == nil {
+		if _, err := DigestFile(ctx, cfg.Image); err != nil {
+			return err
+		}
 	}
 	if err := os.Mkdir(out, 0700); err != nil {
 		return err
@@ -140,7 +143,12 @@ func runNativeSite(ctx context.Context, cfg NativeConfig, use func(context.Conte
 	cfg.Assets.Out = filepath.Join(out, "assets")
 	cfg.Assets.Progress = cfg.Progress
 	preparation := beginProgress(cfg.Progress, "installer-preparation", PhaseStarted, PhaseFinished, PhaseFailed)
-	assets, err := PrepareNativeAssets(ctx, cfg.Assets)
+	var assets NativeAssets
+	if cfg.publication == nil {
+		assets, err = PrepareNativeAssets(ctx, cfg.Assets)
+	} else {
+		assets, cfg.Image, err = cfg.publication.prepare(ctx, cfg.Assets.Out)
+	}
 	preparation.finish(err)
 	if err != nil {
 		return err

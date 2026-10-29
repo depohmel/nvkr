@@ -38,6 +38,7 @@ the move preserves each file's existing format.
 | [`definitions/demo/arm64-nvidia-tcg.json`](definitions/demo/arm64-nvidia-tcg.json) | [`environments/local-arm64-tcg.json`](environments/local-arm64-tcg.json) | Local 32-output NVIDIA OVN demo |
 | [`definitions/demo/arm64-upstream-tcg.json`](definitions/demo/arm64-upstream-tcg.json) | Same local TCG Environment | Local 32-output upstream OVN diagnostic demo |
 | [`definitions/demo/arm64-nvidia-kvm.json`](definitions/demo/arm64-nvidia-kvm.json) | [`environments/github-nightly-nvidia.json`](environments/github-nightly-nvidia.json) | Named NVIDIA nightly producer; current content differences remain explicit |
+| [`definitions/demo/amd64-nvidia-local-kvm.json`](definitions/demo/amd64-nvidia-local-kvm.json) | [`environments/local-amd64-kvm.json`](environments/local-amd64-kvm.json) | Native AMD64 local build and Go site-bootstrap smoke inputs; build and runtime acceptance require a completed Run |
 | [`definitions/demo/arm64-upstream-kvm.json`](definitions/demo/arm64-upstream-kvm.json) | [`environments/github-nightly-upstream.json`](environments/github-nightly-upstream.json) | Separately signed upstream nightly producer |
 | [`definitions/diagnostics/os-amd64.yaml`](definitions/diagnostics/os-amd64.yaml) | [`environments/local-linux-amd64-kvm.yaml`](environments/local-linux-amd64-kvm.yaml) | Native AMD64 plain-disk diagnostic |
 | [`definitions/diagnostics/os-arm64.yaml`](definitions/diagnostics/os-arm64.yaml) | [`environments/local-linux-arm64-kvm.yaml`](environments/local-linux-arm64-kvm.yaml) | Native ARM64 plain-disk diagnostic |
@@ -100,6 +101,6 @@ qualification cutover. Its family Releases require separate digest-pinned verifi
 association; no parent Release, automatic association file or hosted acceptance is supplied by the split.
 
 The [qualification policy](policies/nvke-qualification.yaml) and
-[nightly coordinator configuration](testing/nightly-profiles.json) have independent owners and scopes.
+[nightly build/test workflow](../.github/workflows/nvkr-nightly.yml) have independent owners and scopes.
 [Reconciliation](../docs/adr/reconciliation.md) remains the evidence ledger for implementation and
 external acceptance.
