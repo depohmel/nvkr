@@ -3312,34 +3312,36 @@ extraction and image export retain delivery ownership. The downstream harness
 uses the held publication directly rather than adding another command interface.
 
 The standalone input-staging command and compile-only adapter are removed.
-The [NVKE nightly workflow](../nvke-nightly.md) now resolves one exact NVKE main
-commit and uses two local build/test matrix jobs: AMD64 on `ubuntu-24.04` and
-ARM64 on `arc-arm64-kvm`. It invokes NVKR's existing `TestEndToEnd` Go integration
-through `BuildArtifacts` and `WithNativeSite`, with the source-built NVKE CLI and
-simulator performing bootstrap/installation. Default coverage is the live site
-API and Ready node plus joined cleanup; tenant workload/DNS checks are manual
-opt-ins. This changes downstream repository CI, not qualified release acceptance.
+The [NVKE nightly workflow](../nvke-nightly.md) resolves one exact NVKE main
+commit and dispatches the existing generated ARM64 NVIDIA producer. Its 34 named
+outputs include the native host/site inputs used by the consumer. The runtime
+source policy binds all source-built NVKE products and finalization to that
+cycle commit and requires Git ancestry proof under `main`, while independent
+dependency pins retain their owners. The first
+consumer runs on `arc-arm64-kvm`; no parallel AMD64 producer bundle is added.
 
-The nightly appends catalog-owned exact-source overlays to private attempt inputs
-and executes an ordinary captured local Run. Existing overlay predecessors and
-external acquisition pins retain their owners. Shared native catalogs support
-both architectures; the retained release catalogs are unchanged. One reviewed
-main-specific CAPI init-image acquisition remains distinct from the tagged demo,
-and the source-owned installer continues rejecting mismatched image parents.
-The new parallel AMD64 publication bundle and publication-to-native adapter are
-removed. Retained manually dispatched producer bundles have independent owners;
-the local nightly neither dispatches them nor publishes product artifacts.
+`TestNightlyPublishedCandidate` retrieves the exact producing Run, same-Run Plan
+and publication locator. It uses lifecycle exact-input verification and the
+producer's invocation to admit the held publication, and rejects a source-policy
+Plan that differs from the coordinator's selected NVKE commit. The existing Go
+native owners consume the authenticated CLI, images, disk and installer without
+a second product build or fabricated local Run. They bootstrap the site VM through
+a temporary kind/Lima backend, check the live API and Ready node, and join owned
+cleanup. Tenant workload/DNS checks remain manual opt-ins. Local `TestEndToEnd`
+retains its separate build-and-test developer flow.
 
-Both local Definitions compile with their matching native Environments. Focused
-contracts cover architecture-bound artifact extraction, source/installer
-agreement, independent acquisition lineage, actual Git source freezing, stale
-predecessor rejection and ordinary captured-input replay after relocation.
-The workflow has no Actions artifact uploads, shared caches, registry writers or
-OIDC signing permission. Its independent registry reader is used only for bounded
-private toolchain pulls and removed before candidate execution. Every job has an
-explicit timeout; the Go test reserves two hours for joined cleanup inside the
-outer deadline. These contracts do not establish a completed hosted matrix cycle.
-The complete current nightly build/bootstrap/cleanup cycle remains unverified.
+Local contracts cover exact producer/provider/artifact joins, private CI carrier
+restoration, frozen source selection, publication receipts and source/installer
+agreement. Deadline, joined-verdict and real SIGINT/SIGTERM subprocess tests pass;
+these establish local behavior, not a completed hosted cycle. Producer products
+and raw diagnostics remain in private transport/publication storage. Coordinator
+Actions uploads contain only constructed selection, producing-Run locator and
+cycle-verdict JSON. The runtime receives independent registry/private-storage
+readers, no writer or OIDC permissions, and disables the shared Go Actions cache.
+Every job has an explicit timeout; native runtime reserves 125 minutes for cleanup,
+reporting and margin within its six-hour job. The complete current ARM64 nightly
+build/publication/bootstrap/cleanup cycle remains unverified. Public AMD64 runtime
+coverage awaits admitted artifact production support.
 
 NVKE code is trusted with sudo and Docker access under the runner UID. Private
 paths and environment scrubbing provide no independent sandbox, and test results

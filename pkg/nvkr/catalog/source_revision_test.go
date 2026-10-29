@@ -142,3 +142,86 @@ func TestResolveSourceRevisionRejectsMissingOrCanceledContext(t *testing.T) {
 		})
 	}
 }
+
+func TestResolveSourceRevisionAtRefAdmitsOnlyMainMembership(t *testing.T) {
+	repository, first, git := pinTreeFixture(t, map[string][]byte{"readme": []byte("main membership")})
+	git("branch", "-M", "main")
+	git("-c", "commit.gpgsign=false", "commit", "--allow-empty", "-qm", "main advance")
+	main := git("rev-parse", "HEAD")
+	git("checkout", "-qb", "off-main", first.Commit)
+	git("-c", "commit.gpgsign=false", "commit", "--allow-empty", "-qm", "unmerged sibling")
+	sibling := git("rev-parse", "HEAD")
+	git("checkout", "-q", "main")
+	const selected = "https://github.com/example/runtime-source"
+	t.Setenv("GIT_CONFIG_COUNT", "1")
+	t.Setenv("GIT_CONFIG_KEY_0", "url."+repository+".insteadOf")
+	t.Setenv("GIT_CONFIG_VALUE_0", selected)
+	for _, test := range []struct {
+		name, commit string
+		code         e.Code
+	}{
+		{"current main", main, ""},
+		{"main advanced after selection", first.Commit, ""},
+		{"fetchable unmerged sibling", sibling, e.CodeUnverifiedRef},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			revision, err := ResolveSourceRevisionAtRef(t.Context(), selected, "refs/heads/main", test.commit)
+			if test.code != "" {
+				assertCatalogContractCode(t, err, test.code)
+				if revision != nil {
+					t.Fatal("failed membership issued a source revision")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !revision.issued || revision.pin.Commit != test.commit || revision.pin.TreeHash != first.TreeHash {
+				t.Fatal("main membership changed the selected exact source tree")
+			}
+		})
+	}
+	if _, err := ResolveSourceRevision(t.Context(), selected, sibling); err != nil {
+		t.Fatal("ordinary local exact-commit resolution acquired an unintended main policy", err)
+	}
+}
+
+func TestResolveSourceRevisionAtRefRejectsUnavailableBoundedProof(t *testing.T) {
+	repository, first, git := pinTreeFixture(t, map[string][]byte{"readme": []byte("bounded main history")})
+	git("branch", "-M", "main")
+	for range sourceRevisionAncestryDepth {
+		git("-c", "commit.gpgsign=false", "commit", "--allow-empty", "-qm", "main advance")
+	}
+	const selected = "https://github.com/example/runtime-source"
+	t.Setenv("GIT_CONFIG_COUNT", "1")
+	t.Setenv("GIT_CONFIG_KEY_0", "url."+repository+".insteadOf")
+	t.Setenv("GIT_CONFIG_VALUE_0", selected)
+	revision, err := ResolveSourceRevisionAtRef(t.Context(), selected, "refs/heads/main", first.Commit)
+	assertCatalogContractCode(t, err, e.CodeUnverifiedRef)
+	if revision != nil {
+		t.Fatal("unavailable bounded ancestry proof issued a revision")
+	}
+}
+
+func TestResolveSourceRevisionAtRefAdmitsPolicyBeforeGit(t *testing.T) {
+	canceled, cancel := context.WithCancel(t.Context())
+	cancel()
+	for _, test := range []struct {
+		name, ref, commit string
+		ctx               context.Context
+		code              e.Code
+	}{
+		{"missing context", "refs/heads/main", strings.Repeat("a", 40), nil, e.CodeUsage},
+		{"canceled context", "refs/heads/main", strings.Repeat("a", 40), canceled, e.CodeTimeout},
+		{"wrong branch", "refs/heads/feature", strings.Repeat("a", 40), t.Context(), e.CodeInvalidCatalog},
+		{"mutable source", "refs/heads/main", "main", t.Context(), e.CodeInvalidCatalog},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			revision, err := ResolveSourceRevisionAtRef(test.ctx, "https://github.com/example/runtime-source", test.ref, test.commit)
+			assertCatalogContractCode(t, err, test.code)
+			if revision != nil {
+				t.Fatal("inadmissible policy issued a revision")
+			}
+		})
+	}
+}

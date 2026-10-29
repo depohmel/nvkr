@@ -52,10 +52,12 @@ access, registry retention, runtime acceptance and deployment policy. NVKR offer
 diagnostics under ADR-16 §6; these do not qualify a cluster. Downstream systems consume accepted artifact
 references and own deployment descriptions and acceptance decisions (ADR-19/20).
 A separately authored nightly CI workflow resolves one NVKE main commit and
-builds and tests it locally in architecture matrix jobs. Existing native Go
-owners drive site bootstrap, readiness assertions and joined VM/backend/network
-cleanup. Artifacts stay on the runner. These trusted-code integration results
-remain outside product lifecycle and v1 qualification acceptance (ADR-16/18).
+dispatches the existing generated producer. Its ARM64 NVIDIA consumer authenticates
+that Run's artifacts and invokes existing native Go site bootstrap, readiness and
+joined VM/backend/network cleanup owners, without rebuilding products. Binary
+transport/publication remains private; public coordinator attachments contain
+constructed JSON metadata only. These trusted-code integration results remain
+outside product lifecycle and v1 qualification acceptance (ADR-16/18).
 
 Proposed [ADR-24](adr/0024-imported-validator-catalog.md) separates imported-validator discovery from upstream
 test ownership and binds named artifact roles through explicit diagnostic profiles. The provisional CLI
