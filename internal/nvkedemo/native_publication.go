@@ -101,10 +101,8 @@ func newNativePublicationInputs(ctx context.Context, verified *lifecycle.Verifie
 	if err != nil {
 		return nil, err
 	}
-	if description.Lane != lifecycle.LanePipeline || description.Scope != lifecycle.ScopeArtifactPublication || exact.PlanDigest != digest ||
-		exact.ReleaseSubject != description.Subject || exact.PolicyDigest != description.PolicyDigest ||
-		exact.DefinitionDigest != frozen.DefinitionDigest || exact.EnvironmentDigest != frozen.EnvironmentDigest || exact.ContentSubject != description.ContentSubject {
-		return nil, e.New(e.CodeVerifyFailed, "native publication differs from its exact frozen source inputs")
+	if err := checkNativePublicationBinding(description, exact, &frozen, digest); err != nil {
+		return nil, err
 	}
 	outputs := make(map[string]lifecycle.Artifact, len(description.Artifacts))
 	for _, output := range description.Artifacts {
@@ -124,6 +122,18 @@ func newNativePublicationInputs(ctx context.Context, verified *lifecycle.Verifie
 		return nil, err
 	}
 	return inputs, nil
+}
+
+// This comparison accepts descriptions only after the constructor has required
+// live capabilities. It cannot mint a receipt or replace ExportForInvocation's
+// independent owner and invocation checks before bytes are exposed.
+func checkNativePublicationBinding(release lifecycle.Release, exact lifecycle.ExactInputDescription, plan *factory.Plan, digest string) error {
+	if release.Lane != lifecycle.LanePipeline || release.Scope != lifecycle.ScopeArtifactPublication || exact.PlanDigest != digest ||
+		exact.ReleaseSubject != release.Subject || exact.PolicyDigest != release.PolicyDigest ||
+		exact.DefinitionDigest != plan.DefinitionDigest || exact.EnvironmentDigest != plan.EnvironmentDigest || exact.ContentSubject != release.ContentSubject {
+		return e.New(e.CodeVerifyFailed, "native publication differs from its exact frozen source inputs")
+	}
+	return nil
 }
 
 func nativePublicationRequiredOutputs(arch string) map[string]string {
@@ -230,8 +240,8 @@ func (inputs *nativePublicationInputs) prepare(ctx context.Context, out string) 
 	if err != nil {
 		return assets, disk, err
 	}
-	if site.OS != "linux" || site.Arch != inputs.arch || len(site.Entries) != 2 {
-		return assets, disk, e.New(e.CodeVerifyFailed, "native startup bundle has the wrong platform or membership")
+	if err := checkNativePublicationStartup(site, inputs.arch); err != nil {
+		return assets, disk, err
 	}
 	if err := verifyToolMembers(assets.SiteTools, []string{"nerdctl", nativeIdentityHelper}); err != nil {
 		return assets, disk, err
@@ -261,12 +271,8 @@ func (inputs *nativePublicationInputs) prepare(ctx context.Context, out string) 
 	if err := errors.Join(writeErr, file.Close()); err != nil {
 		return assets, disk, err
 	}
-	if written != payload.Size {
-		return assets, disk, e.New(e.CodeVerifyFailed, "native QCOW payload differs from its published size")
-	}
-	actual, err := DigestFile(ctx, disk)
-	if err != nil || actual != payload.PayloadDigest {
-		return assets, disk, errors.Join(err, e.New(e.CodeVerifyFailed, "native raw QCOW differs from its published payload digest"))
+	if err := checkNativePublishedDisk(ctx, disk, written, payload); err != nil {
+		return assets, disk, err
 	}
 	return assets, disk, nil
 }
@@ -280,6 +286,38 @@ func nativePublicationDiskPayload(output lifecycle.Artifact) (delivery.DiskOutpu
 		return delivery.DiskOutput{}, e.New(e.CodeVerifyFailed, "native publication requires successful plain QCOW2 membership")
 	}
 	return *output.Disk, nil
+}
+
+func checkNativePublicationStartup(bundle delivery.BinaryBundle, arch string) error {
+	if bundle.OS != "linux" || bundle.Arch != arch {
+		return e.New(e.CodeVerifyFailed, "native startup bundle has the wrong platform")
+	}
+	members := make([]string, 0, len(bundle.Entries))
+	for _, entry := range bundle.Entries {
+		members = append(members, entry.Name)
+	}
+	if _, err := sitePreparationMembers(members); err != nil {
+		return e.Wrap(e.CodeVerifyFailed, err, "native startup bundle membership")
+	}
+	return nil
+}
+
+func checkNativePublishedDisk(ctx context.Context, file string, written int64, payload delivery.DiskOutput) error {
+	if written != payload.Size {
+		return e.New(e.CodeVerifyFailed, "native QCOW payload differs from its published size")
+	}
+	actual, err := DigestFile(ctx, file)
+	if err != nil || actual != payload.PayloadDigest {
+		return errors.Join(err, e.New(e.CodeVerifyFailed, "native raw QCOW differs from its published payload digest"))
+	}
+	return nil
+}
+
+func checkNativePublishedImage(output lifecycle.Artifact, exported delivery.PublishedImageExport) error {
+	if exported.ManifestDigest != output.Digest {
+		return e.New(e.CodeVerifyFailed, "native image export changed named output %q", output.Name)
+	}
+	return nil
 }
 
 func (inputs *nativePublicationInputs) prepareImages(ctx context.Context, publication *delivery.Publication, assets *NativeAssets) error {
@@ -309,8 +347,8 @@ func (inputs *nativePublicationInputs) prepareImages(ctx context.Context, public
 		if err != nil {
 			return err
 		}
-		if exported.ManifestDigest != output.Digest {
-			return e.New(e.CodeVerifyFailed, "native image export changed named output %q", output.Name)
+		if err := checkNativePublishedImage(output, exported); err != nil {
+			return err
 		}
 		assets.Images[role] = NativeImageAsset{File: archive, Reference: alias, ManifestDigest: exported.ManifestDigest}
 		if strings.HasPrefix(role, "runtime-") {

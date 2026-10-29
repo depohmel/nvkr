@@ -6,6 +6,8 @@ package nvkedemo
 import (
 	"context"
 	"errors"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -22,6 +24,158 @@ func assertNativePublicationCode(t *testing.T, err error, code e.Code) {
 	var coded *e.Error
 	if !errors.As(err, &coded) || coded.Code != code {
 		t.Fatalf("error=%v, want %s", err, code)
+	}
+}
+
+func TestNativePublicationDescriptionBindingRejectsSubstitution(t *testing.T) {
+	for _, test := range []struct {
+		name string
+		edit func(*lifecycle.Release, *lifecycle.ExactInputDescription, *factory.Plan)
+	}{
+		{"lane", func(r *lifecycle.Release, _ *lifecycle.ExactInputDescription, _ *factory.Plan) { r.Lane = "local" }},
+		{"scope", func(r *lifecycle.Release, _ *lifecycle.ExactInputDescription, _ *factory.Plan) {
+			r.Scope = "authenticity"
+		}},
+		{"Plan", func(_ *lifecycle.Release, x *lifecycle.ExactInputDescription, _ *factory.Plan) {
+			x.PlanDigest = "different"
+		}},
+		{"publication subject", func(r *lifecycle.Release, _ *lifecycle.ExactInputDescription, _ *factory.Plan) {
+			r.Subject = "different"
+		}},
+		{"policy", func(r *lifecycle.Release, _ *lifecycle.ExactInputDescription, _ *factory.Plan) {
+			r.PolicyDigest = "different"
+		}},
+		{"Definition", func(_ *lifecycle.Release, _ *lifecycle.ExactInputDescription, p *factory.Plan) {
+			p.DefinitionDigest = "different"
+		}},
+		{"Environment", func(_ *lifecycle.Release, _ *lifecycle.ExactInputDescription, p *factory.Plan) {
+			p.EnvironmentDigest = "different"
+		}},
+		{"content", func(r *lifecycle.Release, _ *lifecycle.ExactInputDescription, _ *factory.Plan) {
+			r.ContentSubject = "different"
+		}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			// Defensive descriptions exercise only comparisons, never capability
+			// issuance. The real entrypoint still requires both opaque owners.
+			digest := "sha256:" + strings.Repeat("a", 64)
+			release := lifecycle.Release{Lane: lifecycle.LanePipeline, Scope: lifecycle.ScopeArtifactPublication,
+				Subject: "example.invalid/release@" + digest, PolicyDigest: digest, ContentSubject: digest}
+			plan := factory.Plan{DefinitionDigest: digest, EnvironmentDigest: digest}
+			exact := lifecycle.ExactInputDescription{ReleaseSubject: release.Subject, PolicyDigest: release.PolicyDigest,
+				PlanDigest: digest, DefinitionDigest: plan.DefinitionDigest, EnvironmentDigest: plan.EnvironmentDigest, ContentSubject: release.ContentSubject}
+			if err := checkNativePublicationBinding(release, exact, &plan, digest); err != nil {
+				t.Fatal("matching descriptions rejected", err)
+			}
+			test.edit(&release, &exact, &plan)
+			assertNativePublicationCode(t, checkNativePublicationBinding(release, exact, &plan, digest), e.CodeVerifyFailed)
+		})
+	}
+}
+
+func TestNativePublicationStartupChecksDeliveredPlatformAndMembers(t *testing.T) {
+	for _, arch := range []string{"arm64", "amd64"} {
+		for _, test := range []struct {
+			name, os string
+			members  []string
+			other    bool
+			valid    bool
+		}{
+			{"selected", "linux", []string{"nerdctl", nativeIdentityHelper}, false, true},
+			{"host OS", "darwin", []string{"nerdctl", nativeIdentityHelper}, false, false},
+			{"other architecture", "linux", []string{"nerdctl", nativeIdentityHelper}, true, false},
+			{"missing helper", "linux", []string{"nerdctl"}, false, false},
+			{"extra member", "linux", []string{"extra", "nerdctl", nativeIdentityHelper}, false, false},
+			{"substituted helper", "linux", []string{"nerdctl", "sibling"}, false, false},
+		} {
+			t.Run(arch+"/"+test.name, func(t *testing.T) {
+				root := t.TempDir()
+				var files []delivery.BinaryFileInput
+				for _, member := range test.members {
+					file := filepath.Join(root, member)
+					if err := os.WriteFile(file, []byte("synthetic executable "+member), 0755); err != nil {
+						t.Fatal(err)
+					}
+					files = append(files, delivery.BinaryFileInput{Name: member, Path: file, InstallPath: "/usr/local/bin/" + member, Mode: 0755})
+				}
+				selected := arch
+				if test.other {
+					selected = map[string]string{"arm64": "amd64", "amd64": "arm64"}[arch]
+				}
+				bundleRoot := filepath.Join(root, "bundle")
+				if _, err := delivery.BuildBinaryBundle(t.Context(), bundleRoot, delivery.BinaryBundleRequest{
+					OS: test.os, Arch: selected, Purpose: "site-startup-tools-" + selected, Epoch: 1, Files: files,
+				}); err != nil {
+					t.Fatal(err)
+				}
+				bundle, _, err := delivery.InspectBinaryBundle(t.Context(), bundleRoot)
+				if err != nil {
+					t.Fatal(err)
+				}
+				err = checkNativePublicationStartup(bundle, arch)
+				if test.valid {
+					if err != nil {
+						t.Fatal("selected startup bundle rejected", err)
+					}
+				} else {
+					assertNativePublicationCode(t, err, e.CodeVerifyFailed)
+				}
+			})
+		}
+	}
+}
+
+func TestNativePublicationChecksRawPayloadAfterExport(t *testing.T) {
+	for _, test := range []struct {
+		name string
+		edit func(string, *int64, *delivery.DiskOutput) error
+	}{
+		{"exported size", func(_ string, written *int64, _ *delivery.DiskOutput) error { *written++; return nil }},
+		{"published size", func(_ string, _ *int64, payload *delivery.DiskOutput) error { payload.Size++; return nil }},
+		{"payload digest", func(_ string, _ *int64, payload *delivery.DiskOutput) error {
+			payload.PayloadDigest = "sha256:" + strings.Repeat("f", 64)
+			return nil
+		}},
+		{"changed file", func(file string, _ *int64, _ *delivery.DiskOutput) error {
+			return os.WriteFile(file, []byte("changed raw bytes"), 0600)
+		}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			file := filepath.Join(t.TempDir(), "node.qcow2")
+			data := []byte("synthetic raw payload: format interpretation remains delivery-owned")
+			if err := os.WriteFile(file, data, 0600); err != nil {
+				t.Fatal(err)
+			}
+			digest, err := DigestFile(t.Context(), file)
+			if err != nil {
+				t.Fatal(err)
+			}
+			written := int64(len(data))
+			payload := delivery.DiskOutput{Size: written, PayloadDigest: digest}
+			if err := checkNativePublishedDisk(t.Context(), file, written, payload); err != nil {
+				t.Fatal("exact exported payload rejected", err)
+			}
+			if err := test.edit(file, &written, &payload); err != nil {
+				t.Fatal(err)
+			}
+			assertNativePublicationCode(t, checkNativePublishedDisk(t.Context(), file, written, payload), e.CodeVerifyFailed)
+		})
+	}
+}
+
+func TestNativePublicationRejectsChangedExportedImage(t *testing.T) {
+	for _, arch := range []string{"arm64", "amd64"} {
+		for _, manifest := range []string{"", "sha256:" + strings.Repeat("b", 64)} {
+			t.Run(arch+"/"+manifest, func(t *testing.T) {
+				output := lifecycle.Artifact{Name: "ovn-image-" + arch, Digest: "sha256:" + strings.Repeat("a", 64)}
+				exported := delivery.PublishedImageExport{Platform: "linux/" + arch, ManifestDigest: output.Digest}
+				if err := checkNativePublishedImage(output, exported); err != nil {
+					t.Fatal("exact image export rejected", err)
+				}
+				exported.ManifestDigest = manifest
+				assertNativePublicationCode(t, checkNativePublishedImage(output, exported), e.CodeVerifyFailed)
+			})
+		}
 	}
 }
 
