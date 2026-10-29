@@ -119,6 +119,64 @@ func nightlyCoordinatorFixture(t *testing.T) nightlyCoordinatorDocument {
 	}
 	return workflow
 }
+
+func TestNightlyCandidateAdmissionPrecedesSourceCredentials(t *testing.T) {
+	selection := nightlyCoordinatorFixture(t).Jobs["select"]
+	var guard nightlyCoordinatorStep
+	guardAt, sourceAt := -1, -1
+	for i, step := range selection.Steps {
+		if step.Name == "Bind validation to the approved current PR commit" {
+			guard, guardAt = step, i
+		}
+		if step.Env["GH_TOKEN"] == "${{ secrets.NKE_SOURCE_TOKEN }}" {
+			sourceAt = i
+		}
+	}
+	if guardAt < 0 || sourceAt <= guardAt || selection.Permissions["pull-requests"] != "read" {
+		t.Fatal("candidate must be checked before resolving private NVKE source")
+	}
+	for _, test := range []struct {
+		name, ref, approved, pr, providerSHA string
+		valid                                bool
+	}{
+		{"main", "refs/heads/main", "", "", nightlySHA, true},
+		{"exact candidate", "refs/heads/nvkr-validation", nightlySHA, "42", nightlySHA, true},
+		{"main with candidate input", "refs/heads/main", nightlySHA, "42", nightlySHA, false},
+		{"different workflow commit", "refs/heads/nvkr-validation", nightlyNVKESHA, "42", nightlySHA, false},
+		{"stale PR", "refs/heads/nvkr-validation", nightlySHA, "42", nightlyNVKESHA, false},
+		{"zero PR", "refs/heads/nvkr-validation", nightlySHA, "0", nightlySHA, false},
+		{"unadmitted ref", "refs/heads/other", nightlySHA, "42", nightlySHA, false},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			f := newValidationFixture(t)
+			f.setEnv("GITHUB_REF", test.ref)
+			f.setEnv("GITHUB_REPOSITORY", "dsx-ai-factory/nvkr")
+			f.setEnv("CANDIDATE_SHA", test.approved)
+			f.setEnv("CANDIDATE_PR", test.pr)
+			fixtureJSON(t, filepath.Join(f.root, "pr.json"), map[string]any{
+				"head": map[string]string{"sha": test.providerSHA}, "state": "open", "draft": false,
+				"base": map[string]any{"ref": "main", "repo": map[string]string{"full_name": "dsx-ai-factory/nvkr"}},
+			})
+			ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
+			defer cancel()
+			command := exec.CommandContext(ctx, "bash", "-c", guard.Run)
+			command.Env = f.environment
+			log, err := command.CombinedOutput()
+			if test.valid {
+				if err != nil {
+					t.Fatalf("admission failed: %v %s", err, log)
+				}
+			} else if exited, ok := err.(*exec.ExitError); !ok || exited.ExitCode() != 49 || !strings.Contains(string(log), "NVKR-E-UNPINNED-INPUT") {
+				t.Fatalf("invalid candidate not rejected with coded error: %v %s", err, log)
+			}
+			for _, call := range f.calls(t) {
+				if !strings.HasPrefix(call, "GET ") || strings.Contains(call, "nvke/") {
+					t.Fatalf("candidate admission accessed source or mutated state: %s", call)
+				}
+			}
+		})
+	}
+}
 func TestNightlyDispatchesGeneratedProducerBeforeNativeConsumer(t *testing.T) {
 	workflow := nightlyCoordinatorFixture(t)
 	var schedule []struct {

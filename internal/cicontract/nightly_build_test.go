@@ -186,6 +186,47 @@ func noBuildResult(t *testing.T, f *nightlyFixture) {
 	}
 }
 
+func TestNightlyBuildBindsApprovedCandidateBranch(t *testing.T) {
+	for _, test := range []struct {
+		name, approved, producerBranch string
+		want                           int
+	}{
+		{"exact candidate", nightlySHA, "nvkr-validation", 0},
+		{"unapproved candidate", "", "nvkr-validation", 49},
+		{"different approved commit", nightlyNVKESHA, "nvkr-validation", 49},
+		{"cross branch producer", nightlySHA, "main", 49},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			f := newNightlyFixture(t)
+			f.setEnv("GITHUB_REF", "refs/heads/nvkr-validation")
+			f.setEnv("NVKR_CANDIDATE_SHA", test.approved)
+			f.producer["head_branch"] = test.producerBranch
+			output, status := f.run(t, "oss")
+			if status != test.want {
+				t.Fatalf("status=%d want=%d: %s", status, test.want, output)
+			}
+			if test.want != 0 {
+				noBuildResult(t, f)
+				return
+			}
+			var request struct {
+				Ref string `json:"ref"`
+			}
+			data, err := os.ReadFile(filepath.Join(f.out, "request.json"))
+			if err != nil || json.Unmarshal(data, &request) != nil || request.Ref != "nvkr-validation" {
+				t.Fatalf("candidate dispatched another ref: %s %v", data, err)
+			}
+			var result struct {
+				SourceBranch string `json:"sourceBranch"`
+			}
+			data, err = os.ReadFile(filepath.Join(f.out, "build.json"))
+			if err != nil || json.Unmarshal(data, &result) != nil || result.SourceBranch != "nvkr-validation" {
+				t.Fatalf("candidate lost actual branch: %s %v", data, err)
+			}
+		})
+	}
+}
+
 func TestNightlyBuildRecordsOnlyExactSuccessfulProducer(t *testing.T) {
 	f := newNightlyFixture(t)
 	output, status := f.run(t, "oss")

@@ -124,18 +124,23 @@ func TestNightlyOptInCannotSilentlySkipRuntimeJob(t *testing.T) {
 
 func TestNightlyCycleCannotReportSuccessfulPreparationOrFailedCleanup(t *testing.T) {
 	for _, test := range []struct {
-		name, phase string
-		result      error
-		passed      bool
+		name, phase  string
+		result       error
+		passed       bool
+		tenantPassed bool
+		branch       string
 	}{
-		{"joined runtime", "runtime", nil, true},
-		{"only verified artifacts", "preparation", nil, false},
-		{"cleanup failed", "runtime", errors.New("joined cleanup failed"), false},
+		{name: "joined runtime", phase: "runtime", passed: true},
+		{name: "only verified artifacts", phase: "preparation"},
+		{name: "cleanup failed", phase: "runtime", result: errors.New("joined cleanup failed")},
+		{name: "candidate tenant passed", phase: "runtime", passed: true, tenantPassed: true, branch: nightlyCandidateBranch},
+		{name: "candidate cleanup failed after tenant", phase: "runtime", result: errors.New("joined cleanup failed"), tenantPassed: true, branch: nightlyCandidateBranch},
+		{name: "candidate tenant failed", phase: "runtime", result: errors.New("tenant failed"), branch: nightlyCandidateBranch},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			out := t.TempDir()
-			build := NightlyBuild{CoordinatorRun: "100", CoordinatorAttempt: "2", ProducerRun: 200, ProducerAttempt: 1}
-			if err := writeNightlyCycle(t.Context(), out, NightlyProfile{Name: "fixture"}, build, "fixture-subject", test.phase, test.result); err != nil {
+			build := NightlyBuild{CoordinatorRun: "100", CoordinatorAttempt: "2", ProducerRun: 200, ProducerAttempt: 1, SourceBranch: test.branch}
+			if err := writeNightlyCycle(t.Context(), out, NightlyProfile{Name: "fixture"}, build, "fixture-subject", test.phase, test.tenantPassed, test.result); err != nil {
 				t.Fatal(err)
 			}
 			raw, err := os.ReadFile(filepath.Join(out, "cycle.json"))
@@ -147,8 +152,11 @@ func TestNightlyCycleCannotReportSuccessfulPreparationOrFailedCleanup(t *testing
 				QualificationAuthority string `json:"qualificationAuthority"`
 				CoordinatorRun         string `json:"coordinatorRun"`
 				ProducerRun            int64  `json:"producerRun"`
+				SourceBranch           string `json:"sourceBranch"`
+				TenantChecksPassed     bool   `json:"tenantChecksPassed"`
 			}
-			if err := json.Unmarshal(raw, &cycle); err != nil || cycle.RuntimePassed != test.passed || cycle.QualificationAuthority != "none" || cycle.CoordinatorRun != build.CoordinatorRun || cycle.ProducerRun != build.ProducerRun {
+			branch, _ := nightlySourceBranch(build)
+			if err := json.Unmarshal(raw, &cycle); err != nil || cycle.RuntimePassed != test.passed || cycle.TenantChecksPassed != test.tenantPassed || cycle.SourceBranch != branch || cycle.QualificationAuthority != "none" || cycle.CoordinatorRun != build.CoordinatorRun || cycle.ProducerRun != build.ProducerRun {
 				t.Fatalf("unexpected trusted verdict: %s %v", raw, err)
 			}
 		})

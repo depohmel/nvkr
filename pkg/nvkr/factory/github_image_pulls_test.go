@@ -9,11 +9,13 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"regexp"
 	"slices"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/dsx-ai-factory/nvkr/pkg/nvkr/definition"
 	e "github.com/dsx-ai-factory/nvkr/pkg/nvkr/errors"
 	yamlv3 "go.yaml.in/yaml/v3"
 	"sigs.k8s.io/yaml"
@@ -119,6 +121,14 @@ func TestPrivateToolchainPublicationBoundary(t *testing.T) {
 		{"disk family non-toolchain subject", "ghcr.io/dsx-ai-factory/nvkr/m2-candidate/disks", "ghcr.io/dsx-ai-factory/nvkr/m2-candidate/other/packer", false, false},
 		{"unsupported repository", "ghcr.io/dsx-ai-factory/nvkr/m2-candidate", "ghcr.io/dsx-ai-factory/nke-recipes/m2-candidate/toolchains/packer", false, false},
 		{"nightly current subject", "ghcr.io/dsx-ai-factory/nvkr/nightly/nvke-nightly-arm64", "ghcr.io/dsx-ai-factory/nvkr/m2-candidate/toolchains/packer", false, true},
+		{"nightly candidate current subject", "ghcr.io/dsx-ai-factory/nvkr/nightly-candidate/nvke-nightly-arm64", "ghcr.io/dsx-ai-factory/nvkr/m2-candidate/toolchains/packer", false, true},
+		{"nightly candidate prefix lookalike", "ghcr.io/dsx-ai-factory/nvkr/nightly-candidate/nvke-nightly-arm64-mirror", "ghcr.io/dsx-ai-factory/nvkr/m2-candidate/toolchains/packer", false, false},
+		{"nightly candidate child prefix", "ghcr.io/dsx-ai-factory/nvkr/nightly-candidate/nvke-nightly-arm64/other", "ghcr.io/dsx-ai-factory/nvkr/m2-candidate/toolchains/packer", false, false},
+		{"nightly candidate foreign owner", "ghcr.io/other/nvkr/nightly-candidate/nvke-nightly-arm64", "ghcr.io/dsx-ai-factory/nvkr/m2-candidate/toolchains/packer", false, false},
+		{"nightly candidate foreign toolchain owner", "ghcr.io/dsx-ai-factory/nvkr/nightly-candidate/nvke-nightly-arm64", "ghcr.io/other/nvkr/m2-candidate/toolchains/packer", false, false},
+		{"nightly candidate unsupported repository", "ghcr.io/dsx-ai-factory/nvkr/nightly-candidate/nvke-nightly-arm64", "ghcr.io/dsx-ai-factory/nke-recipes/m2-candidate/toolchains/packer", false, false},
+		{"nightly candidate non-toolchain subject", "ghcr.io/dsx-ai-factory/nvkr/nightly-candidate/nvke-nightly-arm64", "ghcr.io/dsx-ai-factory/nvkr/m2-candidate/other/packer", false, false},
+		{"unadmitted upstream candidate prefix", "ghcr.io/dsx-ai-factory/nvkr/nightly-candidate/nvke-nightly-upstream-ovn-arm64", "ghcr.io/dsx-ai-factory/nvkr/m2-candidate/toolchains/packer", false, false},
 		{"nightly unsupported repository", "ghcr.io/dsx-ai-factory/nvkr/nightly/nvke-nightly-arm64", "ghcr.io/dsx-ai-factory/nke-recipes/m2-candidate/toolchains/packer", false, false},
 		{"upstream nightly current subject", "ghcr.io/dsx-ai-factory/nvkr/nightly/nvke-nightly-upstream-ovn-arm64", "ghcr.io/dsx-ai-factory/nvkr/m2-candidate/toolchains/packer", false, true},
 		{"upstream nightly unsupported repository", "ghcr.io/dsx-ai-factory/nvkr/nightly/nvke-nightly-upstream-ovn-arm64", "ghcr.io/dsx-ai-factory/nke-recipes/m2-candidate/toolchains/packer", false, false},
@@ -151,6 +161,63 @@ func TestPrivateToolchainPublicationBoundary(t *testing.T) {
 	plan.Environment.GitHubARC = "unsupported"
 	if githubPrivateToolchain(plan, "ghcr.io/dsx-ai-factory/nvkr/m2-candidate/toolchains/packer@sha256:"+strings.Repeat("a", 64)) {
 		t.Fatal("unsupported ARC policy received private image preparation")
+	}
+}
+
+func TestNightlyCandidateEnvironmentHasExactBranchAndNamespace(t *testing.T) {
+	environment, err := definition.LoadEnvironment(t.Context(), "../../../inputs/environments/github-nightly-nvidia.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Equal(environment.GitHubDispatchBranches, []string{"nvkr-validation"}) || environment.GitHubDevelopment ||
+		environment.Publication.RepositoryPrefix != "ghcr.io/dsx-ai-factory/nvkr/nightly-candidate/nvke-nightly-arm64" ||
+		environment.Publication.CredentialRef != ProductionRegistryWriteCredential {
+		t.Fatal("nightly candidate changed its exact branch, namespace or production credential contract")
+	}
+	identity, err := regexp.Compile(environment.Signing.Identity)
+	if err != nil {
+		t.Fatal(err)
+	}
+	const workflow = "https://github.com/dsx-ai-factory/nvkr/.github/workflows/nvkr-run-nvke-nightly-arm64.yml"
+	for _, test := range []struct {
+		name, subject string
+		allowed       bool
+	}{
+		{"main", workflow + "@refs/heads/main", true},
+		{"validation", workflow + "@refs/heads/nvkr-validation", true},
+		{"main lookalike", workflow + "@refs/heads/main-other", false},
+		{"validation lookalike", workflow + "@refs/heads/nvkr-validation-other", false},
+		{"other branch", workflow + "@refs/heads/feature/nightly", false},
+		{"tag", workflow + "@refs/tags/nvkr-validation", false},
+		{"pull request", workflow + "@refs/pull/281/merge", false},
+		{"other workflow", strings.ReplaceAll(workflow, "nightly-arm64.yml", "nightly-upstream-ovn-arm64.yml") + "@refs/heads/nvkr-validation", false},
+		{"other repository", strings.ReplaceAll(workflow, "/nvkr/", "/nvkr-mirror/") + "@refs/heads/nvkr-validation", false},
+		{"other owner", strings.ReplaceAll(workflow, "/dsx-ai-factory/", "/other/") + "@refs/heads/nvkr-validation", false},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			if identity.MatchString(test.subject) != test.allowed {
+				t.Fatalf("nightly signer admission differs for %s", test.subject)
+			}
+		})
+	}
+	for _, path := range []string{"github-release.yaml", "github-nightly-upstream.json"} {
+		t.Run(path, func(t *testing.T) {
+			other, err := definition.LoadEnvironment(t.Context(), "../../../inputs/environments/"+path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			policy, err := regexp.Compile(other.Signing.Identity)
+			if err != nil {
+				t.Fatal(err)
+			}
+			workflow := "https://github.com/dsx-ai-factory/nvkr/.github/workflows/nvkr-run"
+			if other.GitHubBundle != "" {
+				workflow += "-" + other.GitHubBundle
+			}
+			if slices.Contains(other.GitHubDispatchBranches, "nvkr-validation") || policy.MatchString(workflow+".yml@refs/heads/nvkr-validation") {
+				t.Fatal("nightly validation branch escaped into another producer's policy")
+			}
+		})
 	}
 }
 

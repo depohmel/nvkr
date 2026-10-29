@@ -27,10 +27,84 @@ select a completed candidate, and run its native Go E2E test:
 5. Check the live Kubernetes API `/readyz`, the identified Ready node and native
    VM evidence, then stop and join owned VM, backend and network cleanup.
 
-Manual `tenant_checks` additionally creates a tenant and checks workload and DNS.
+Scheduled runs and candidate validation additionally create a tenant and check
+workload and DNS. Manual main runs default to those checks and may explicitly
+disable them; such a run cannot supply the full candidate-validation verdict.
 The nightly consumer builds no product artifacts. The separate local
 `TestEndToEnd` test retains its build-and-test developer flow; the nightly does
 not invoke it. Published native conformance remains unsupported.
+
+## Validate pipeline changes before merging
+
+The same coordinator and generated producer admit one additional exact branch,
+`nvkr-validation`. An operator approves the exact current PR commit before moving
+that automation-owned branch. It is not an automatic untrusted-PR execution path.
+Run the reviewed operator helper from a trusted checkout, never the candidate's
+copy of the helper:
+
+```sh
+bash scripts/nightly-validate.sh --approve PR_NUMBER EXACT_40_CHARACTER_COMMIT /absolute/fresh/output
+```
+
+GitHub supports dispatching an already registered workflow on another branch
+([manual workflow runs](https://docs.github.com/en/actions/how-tos/manage-workflow-runs/manually-run-a-workflow)).
+The candidate therefore runs its own coordinator and generated code before merge.
+
+Passing `--approve` trusts that exact commit with source access, private registry
+publication/signing, Docker, sudo and the KVM runner. The operator's GitHub
+credential needs repository and workflow-write access; it stays in the operator
+process and is never passed into the dispatched workflow. The command targets
+`dsx-ai-factory/nvkr` explicitly, regardless of the local `origin` remote.
+
+Before promotion it checks the current open, non-draft PR head and its exact
+`copy-pr-bot` mirror. An atomic GitHub reference update acquires a single
+automation-owned lock and replaces the candidate branch only if its previously
+observed commit still matches. It does not update `main`, the PR branch or the
+mirror. Both candidate refs are reserved for this workflow, not human development.
+Existing candidate runs, including waiting deployments, prevent another promotion.
+
+The command dispatches the existing nightly at that branch and joins only the
+exact returned run ID. It requires successful build and runtime jobs, an exact
+commit/branch/attempt verdict, tenant checks and joined cleanup, then rechecks the
+PR head. A new PR commit invalidates the result. An ambiguous dispatch is never
+replayed or replaced with a latest-run lookup. Cancellation requests apply only
+to the returned coordinator ID; its producer retains its existing cleanup owner.
+The candidate branch remains frozen while any candidate run is active or cannot
+be inspected.
+
+Only a fully verified successful cycle releases its lock automatically. A failed
+or canceled coordinator can itself have an ambiguous child dispatch, so failure
+retains the lock even when no run is yet visible. After a failure, crash or
+ambiguous request, inspect the recorded run facts and all
+candidate runs before recovering an orphaned lock:
+
+```sh
+bash scripts/nightly-validate.sh --unlock EXACT_LOCK_COMMIT /absolute/fresh/recovery-output
+```
+
+Recovery requires the previous operator process and its requests to have ended;
+investigate any ambiguous dispatch before using it. An idle scan alone cannot
+prove that a delayed request will never surface. Never recover automatically as
+part of retrying a failed command. Recovery refuses active or unreadable candidate
+runs and removes only the lock
+whose commit matches the supplied lease. It does not move the candidate branch.
+
+One-time repository setup is required before the first invocation:
+
+- Reserve `nvkr-validation` and `nvkr-validation-lock` for the authorized operator;
+  restrict who can create, update and delete those refs. Review the exact commit
+  before permitting privileged candidate code, including any push-triggered code.
+- Add the exact `nvkr-validation` branch to the `nvkr-arc` and `nvkr-release`
+  deployment policies, and grant the existing private storage and runner access.
+  Do not widen either policy to arbitrary PR branches.
+- Keep the new `ghcr.io/dsx-ai-factory/nvkr/nightly-candidate/nvke-nightly-arm64`
+  packages private/internal and unlinked from the public repository. The existing
+  metadata-only package bootstrap and private-publication checks run before binary
+  uploads. Existing linked destinations are not silently admitted.
+
+The helper produces manual pre-merge evidence. It does not configure a required
+GitHub check or claim that branch protections enforce this process. No successful
+full candidate run or completed provider setup is recorded for this implementation.
 
 ## Inputs and access
 

@@ -13,8 +13,17 @@ profiles=$1 profile=$2 out=$3
 for command in gh jq timeout; do
   command -v "$command" >/dev/null || fail NVKR-E-ENGINE-CAPABILITY "missing $command" 29
 done
-[[ ${GITHUB_SERVER_URL:-} == https://github.com && ${GITHUB_REF:-} == refs/heads/main ]] ||
-  fail NVKR-E-ENGINE-CAPABILITY 'nightly production requires the GitHub main workflow' 29
+[[ ${GITHUB_SERVER_URL:-} == https://github.com ]] ||
+  fail NVKR-E-ENGINE-CAPABILITY 'nightly production requires GitHub.com' 29
+case ${GITHUB_REF:-} in
+  refs/heads/main) branch=main ;;
+  refs/heads/nvkr-validation)
+    branch=nvkr-validation
+    [[ ${NVKR_CANDIDATE_SHA:-} == "${GITHUB_SHA:-}" && ${NVKR_CANDIDATE_SHA:-} =~ ^[0-9a-f]{40}$ ]] ||
+      fail NVKR-E-UNPINNED-INPUT 'candidate execution requires its exact approved workflow commit' 49
+    ;;
+  *) fail NVKR-E-ENGINE-CAPABILITY 'nightly requires main or the explicitly approved validation branch' 29 ;;
+esac
 : "${GITHUB_REPOSITORY:?}" "${GITHUB_REPOSITORY_ID:?}" "${GITHUB_SHA:?}" "${GITHUB_RUN_ID:?}" "${GITHUB_RUN_ATTEMPT:?}"
 [[ ${NVKE_COMMIT:-} =~ ^[0-9a-f]{40}$ ]] || fail NVKR-E-UNPINNED-INPUT 'nightly requires the cycle-resolved exact NVKE main revision' 49
 selection=$(jq -ce --arg name "$profile" '[.[] | select(.name == $name)] | if length == 1 then .[0] else error("unknown or ambiguous profile") end' "$profiles") ||
@@ -74,7 +83,7 @@ jq -e --arg repo "$GITHUB_REPOSITORY" --arg id "$GITHUB_REPOSITORY_ID" \
 api "repos/${GITHUB_REPOSITORY}/actions/workflows/${workflow}" >"$out/workflow.json"
 jq -e --arg path ".github/workflows/$workflow" '.path == $path and .state == "active"' "$out/workflow.json" >/dev/null ||
   fail NVKR-E-ENGINE-CAPABILITY 'maintained producer workflow is unavailable' 29
-jq -n --arg source "$NVKE_COMMIT" '{ref:"main",inputs:{source_commit:$source}}' >"$out/request.json"
+jq -n --arg source "$NVKE_COMMIT" --arg branch "$branch" '{ref:$branch,inputs:{source_commit:$source}}' >"$out/request.json"
 # A failed/ambiguous POST is never retried: it may already have created a run.
 api --method POST "repos/${GITHUB_REPOSITORY}/actions/workflows/${workflow}/dispatches" \
   --input "$out/request.json" >"$out/dispatch.json" ||
@@ -87,8 +96,8 @@ deadline=$((SECONDS + 19800))
 while (( SECONDS < deadline )); do
   api "repos/${GITHUB_REPOSITORY}/actions/runs/${run_id}" >"$out/producer-run.json"
   jq -e --arg id "$run_id" --arg sha "$GITHUB_SHA" --arg repo "$GITHUB_REPOSITORY" \
-    --arg path ".github/workflows/$workflow" \
-    '(.id|tostring) == $id and .head_sha == $sha and .head_branch == "main" and
+    --arg path ".github/workflows/$workflow" --arg branch "$branch" \
+    '(.id|tostring) == $id and .head_sha == $sha and .head_branch == $branch and
      .event == "workflow_dispatch" and .path == $path and .repository.full_name == $repo and .run_attempt == 1' \
     "$out/producer-run.json" >/dev/null ||
     fail NVKR-E-UNPINNED-INPUT 'producer identity, commit, workflow or attempt differs from the nightly cycle' 49
@@ -100,7 +109,7 @@ while (( SECONDS < deadline )); do
       --arg coordinator "$GITHUB_RUN_ID" --arg attempt "$GITHUB_RUN_ATTEMPT" \
       --arg nvke "$NVKE_COMMIT" \
       '{profile:$profile,coordinatorRun:$coordinator,coordinatorAttempt:$attempt,
-        producerRun:$producer.id,producerAttempt:$producer.run_attempt,sourceCommit:$producer.head_sha,nvkeCommit:$nvke,
+        producerRun:$producer.id,producerAttempt:$producer.run_attempt,sourceCommit:$producer.head_sha,sourceBranch:$producer.head_branch,nvkeCommit:$nvke,
         producerURL:$producer.html_url,trust:"github-run-facts; publication-not-yet-verified"}' >"$out/build.json"
     exit 0
   fi

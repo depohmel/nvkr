@@ -3533,7 +3533,8 @@ Plan that differs from the coordinator's selected NVKE commit. The existing Go
 native owners consume the authenticated CLI, images, disk and installer without
 a second product build or fabricated local Run. They bootstrap the site VM through
 a temporary kind/Lima backend, check the live API and Ready node, and join owned
-cleanup. Tenant workload/DNS checks remain manual opt-ins. Local `TestEndToEnd`
+cleanup. Scheduled and candidate-validation cycles require tenant workload/DNS
+checks; manual main cycles may explicitly omit them. Local `TestEndToEnd`
 retains its separate fresh-build developer flow, with site smoke by default and
 tenant/conformance checks selected explicitly. Its host-matched Linux AMD64
 defaults do not add an AMD64 generated nightly producer or a recorded runtime
@@ -3557,6 +3558,20 @@ paths and environment scrubbing provide no independent sandbox, and test results
 remain unsigned diagnostics. Existing ADR-16 conformance and generated producer
 identity/result contracts are unchanged. The daily 03:17 UTC trigger is retained
 at the user's explicit request.
+
+The pre-merge path reuses the same coordinator and generated producer on the
+exact `nvkr-validation` branch. The operator helper approves one exact current
+PR/mirror commit, atomically leases the candidate and lock refs, dispatches and
+joins only the returned coordinator ID, and requires successful build/runtime
+jobs plus the branch/commit-bound runtime and tenant verdict after cleanup. The
+consumer narrows signer verification to that actual workflow ref, preserving the
+frozen Environment. Main and validation nightly publication move together to the
+fresh `nightly-candidate/nvke-nightly-arm64` prefix; existing private/internal and
+unlinked-package checks remain mandatory. This is implemented candidate execution,
+not a recorded successful hosted run. Branch-write restrictions, exact ARC/release
+environment admission, private package grants and any required full-E2E GitHub
+status remain external setup, unverified by local contract tests. No provider
+setting or package access change is established by these source changes.
 
 The archive correction selects source-built tarball assets in executable bundles
 through exact resolved-component and producer/output membership. Helm and disk

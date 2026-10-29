@@ -358,7 +358,8 @@ disk producer's full material closure.
 
 Internal native toolchains beneath the candidate publication prefix's `toolchains/`
 repositories use a separate preparation step with `contents: read` and no workflow package scope.
-The maintained M2, exact `ghcr.io/dsx-ai-factory/nvkr/m2-candidate/disks` family and two NVKE
+The maintained M2, exact `ghcr.io/dsx-ai-factory/nvkr/m2-candidate/disks` family,
+`ghcr.io/dsx-ai-factory/nvkr/nightly-candidate/nvke-nightly-arm64` and the two legacy NVKE
 nightly publication prefixes also reuse the already-published
 `ghcr.io/dsx-ai-factory/nvkr/m2-candidate/toolchains/` pins. Reusing these toolchain subjects does
 not relocate them into family or nightly output namespaces. Other family prefixes, child or lookalike
@@ -529,8 +530,26 @@ from the coordinator's NVKE commit. Existing Go native owners consume those
 published artifacts directly, invoke the built CLI to bootstrap a real site VM
 through a temporary kind/Lima backend, check the live API and Ready node, and
 join VM/backend/network cleanup. The nightly performs no second product build
-and fabricates no local Run. Tenant workload/DNS checks are explicit manual
-opt-ins. Local developer build-and-test integration retains its separate scope.
+and fabricates no local Run. Scheduled and candidate-validation runs require tenant
+workload/DNS checks; manual main runs can explicitly omit them. The cycle verdict
+records successful tenant checks separately and is written after joined cleanup.
+Local developer build-and-test integration retains its separate scope.
+
+The exact `nvkr-validation` branch reuses this generated producer for pre-merge
+pipeline validation under `githubDispatchBranches`. A trusted operator approves
+the immutable current PR head and exact mirror before atomically leasing the
+automation-owned candidate and lock refs. Promotion credentials stay with the
+operator. The coordinator, producer and artifact joins retain the actual branch
+and commit; the consumer narrows the authored signer policy to the exact producing
+workflow ref without changing the frozen Environment. The main and validation
+nightly share the new private/internal, unlinked `nightly-candidate` publication
+prefix; formal release inputs and identity remain unchanged. Required ref-write
+restrictions, exact protected-environment branch admission and access grants are
+external prerequisites, not claims established by the operator helper. Recovery
+cannot release the leased lock while candidate runs remain active or unreadable.
+Pre-merge acceptance requires completed build/runtime jobs and the exact full
+runtime/tenant/cleanup verdict, and rechecks the current PR head. This manual
+evidence does not itself install a required GitHub status check.
 
 Runtime uses `arc-arm64-kvm` and `nvkr-arc`; a public AMD64 lane awaits admitted
 artifact production support. Native KVM and actual capacity remain admission

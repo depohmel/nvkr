@@ -86,20 +86,20 @@ func TestNightlyCycleBindsCoordinatorSourceProfileAndProducer(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			changed := base
 			test.change(&changed)
-			assertNightlyCode(t, validateNightlyCycle(profile, changed, "example/nvkr", "123", base.SourceCommit, "100", "2"), e.CodeUnpinnedInput)
+			assertNightlyCode(t, validateNightlyCycle(profile, changed, "example/nvkr", "123", base.SourceCommit, "100", "2", "refs/heads/main"), e.CodeUnpinnedInput)
 		})
 	}
 	for _, network := range []string{"ovn", "upstream-ovn"} {
 		selected, locator := profile, base
 		selected.Network = network
 		locator.Profile = selected
-		if err := validateNightlyCycle(selected, locator, "example/nvkr", "123", base.SourceCommit, "100", "2"); err != nil {
+		if err := validateNightlyCycle(selected, locator, "example/nvkr", "123", base.SourceCommit, "100", "2", "refs/heads/main"); err != nil {
 			t.Fatal(err)
 		}
 	}
 	for _, id := range []string{"0", "-1", "01", "1.5", "9007199254740992"} {
 		t.Run("noncanonical id "+id, func(t *testing.T) {
-			assertNightlyCode(t, validateNightlyCycle(profile, base, "example/nvkr", id, base.SourceCommit, "100", "2"), e.CodeUnpinnedInput)
+			assertNightlyCode(t, validateNightlyCycle(profile, base, "example/nvkr", id, base.SourceCommit, "100", "2", "refs/heads/main"), e.CodeUnpinnedInput)
 		})
 	}
 }
@@ -216,6 +216,10 @@ func nightlyCompiledFixture(t *testing.T, profile NightlyProfile, build NightlyB
 	environment.Publication.Mode = "per-output-v1"
 	environment.Publication.RepositoryPrefix = "ghcr.io/example/nvkr/nightly/fixture"
 	environment.Signing.Identity = "^https://github\\.com/example/nvkr/\\.github/workflows/" + profile.BuildWorkflow + "@refs/heads/main$"
+	if build.SourceBranch == nightlyCandidateBranch {
+		environment.GitHubDispatchBranches = []string{nightlyCandidateBranch}
+		environment.Signing.Identity = "^https://github\\.com/example/nvkr/\\.github/workflows/" + profile.BuildWorkflow + "@refs/heads/(main|nvkr-validation)$"
+	}
 	plan, err := factory.CompileDocuments(t.Context(), profile.Definition, declared, profile.Environment, environment, "test")
 	if err != nil {
 		t.Fatal(err)
@@ -236,7 +240,8 @@ func nightlyCompiledFixture(t *testing.T, profile NightlyProfile, build NightlyB
 }
 
 func nightlyAPIRun(profile NightlyProfile, build NightlyBuild) nightlyGitHubRun {
-	run := nightlyGitHubRun{ID: build.ProducerRun, RunAttempt: 1, HeadSHA: build.SourceCommit, HeadBranch: "main", Event: "workflow_dispatch", Path: ".github/workflows/" + profile.BuildWorkflow, Status: "completed", Conclusion: "success", HTMLURL: build.ProducerURL}
+	branch, _ := nightlySourceBranch(build)
+	run := nightlyGitHubRun{ID: build.ProducerRun, RunAttempt: 1, HeadSHA: build.SourceCommit, HeadBranch: branch, Event: "workflow_dispatch", Path: ".github/workflows/" + profile.BuildWorkflow, Status: "completed", Conclusion: "success", HTMLURL: build.ProducerURL}
 	run.Repository.ID, run.Repository.FullName = 123, "example/nvkr"
 	run.HeadRepository = run.Repository
 	return run
@@ -248,7 +253,8 @@ func nightlyAPIArtifact(name string, build NightlyBuild) nightlyGitHubArtifact {
 	if name == "nvkr-publication-release" {
 		artifact.ID = 301
 	}
-	artifact.WorkflowRun.ID, artifact.WorkflowRun.RepositoryID, artifact.WorkflowRun.HeadRepositoryID, artifact.WorkflowRun.HeadSHA, artifact.WorkflowRun.HeadBranch = build.ProducerRun, 123, 123, build.SourceCommit, "main"
+	branch, _ := nightlySourceBranch(build)
+	artifact.WorkflowRun.ID, artifact.WorkflowRun.RepositoryID, artifact.WorkflowRun.HeadRepositoryID, artifact.WorkflowRun.HeadSHA, artifact.WorkflowRun.HeadBranch = build.ProducerRun, 123, 123, build.SourceCommit, branch
 	return artifact
 }
 
@@ -609,7 +615,7 @@ func TestNightlyExactDownloadsAndOwnerCarrierRestore(t *testing.T) {
 				}
 				return archives[index], nil
 			}
-			inputs, err := newNightlyInputsWithCapture(t.Context(), profile, build, plan, plan.Definition, plan.Environment, workspace, "example/nvkr", "123", build.SourceCommit, "100", "2", capture)
+			inputs, err := newNightlyInputsWithCapture(t.Context(), profile, build, plan, plan.Definition, plan.Environment, workspace, "example/nvkr", "123", build.SourceCommit, "100", "2", "refs/heads/main", capture)
 			if scenario == "success" {
 				if err != nil {
 					t.Fatal(err)
@@ -677,7 +683,7 @@ func TestNightlyCancellationSourceBindingAndCapabilitiesPrecedeArtifactWork(t *t
 			}
 			calls := 0
 			capture := func(context.Context, []string, string, time.Duration) ([]byte, error) { calls++; return nil, nil }
-			inputs, err := newNightlyInputsWithCapture(ctx, selected, locator, plan, plan.Definition, plan.Environment, workspace, "example/nvkr", "123", build.SourceCommit, "100", "2", capture)
+			inputs, err := newNightlyInputsWithCapture(ctx, selected, locator, plan, plan.Definition, plan.Environment, workspace, "example/nvkr", "123", build.SourceCommit, "100", "2", "refs/heads/main", capture)
 			assertNightlyCode(t, err, code)
 			entries, readErr := os.ReadDir(workspace)
 			if inputs != nil || calls != 0 || readErr != nil || len(entries) != 0 {
