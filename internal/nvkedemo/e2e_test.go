@@ -58,16 +58,6 @@ func TestEndToEnd(t *testing.T) {
 	if err := AdmitDemoDeployment(ctx, cfg); err != nil {
 		t.Fatal(err)
 	}
-	if commit := os.Getenv("NVKR_NVKE_SOURCE_COMMIT"); commit != "" {
-		tools, _, _, _, selectErr := nativeToolSelection(runtime.GOOS + "/" + runtime.GOARCH)
-		if selectErr != nil {
-			t.Fatal(selectErr)
-		}
-		build.Definition, err = freezeNativeE2ESource(ctx, build, commit, tools)
-		if err != nil {
-			t.Fatal(err)
-		}
-	}
 	built, err := BuildArtifacts(ctx, build)
 	if err != nil {
 		t.Fatal(err)
