@@ -273,6 +273,50 @@ func TestNativeE2ESourceSelectionIsExplicit(t *testing.T) {
 	}
 }
 
+func TestNativeE2ESourceResolvesPathsBeforeChangingDirectory(t *testing.T) {
+	for _, commit := range []string{"", strings.Repeat("a", 40)} {
+		t.Run(commit, func(t *testing.T) {
+			t.Chdir(t.TempDir())
+			file := DemoFile{Version: 1,
+				Build: BuildFile{Repo: "../repo", NVKEClone: "../nvke", Attempt: "source", Jobs: 1},
+				Run:   RunFile{Out: "../site", NVKECheckout: "../installer", TimeoutSeconds: 3600},
+			}
+			raw, err := yaml.Marshal(file)
+			if err != nil {
+				t.Fatal(err)
+			}
+			config := filepath.Join(t.TempDir(), "e2e.yaml")
+			if err := os.WriteFile(config, raw, 0600); err != nil {
+				t.Fatal(err)
+			}
+			build, cfg, _, err := nativeE2EConfig(t.Context(), func(name string) string {
+				switch name {
+				case "NVKR_NVKE_E2E_CONFIG":
+					return config
+				case "NVKR_NVKE_E2E_SOURCE_COMMIT":
+					return commit
+				}
+				return ""
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			for got, original := range map[string]string{build.Repository: file.Build.Repo, build.NVKEClone: file.Build.NVKEClone, cfg.Out: file.Run.Out, cfg.NVKECheckout: file.Run.NVKECheckout} {
+				want := original
+				if commit != "" {
+					want, err = filepath.Abs(original)
+					if err != nil {
+						t.Fatal(err)
+					}
+				}
+				if got != want || cfg.Repository != build.Repository {
+					t.Fatalf("source %q path=%q want %q", commit, got, want)
+				}
+			}
+		})
+	}
+}
+
 func TestLocalNVKESourceRejectsIncompatibleBuildsBeforeWork(t *testing.T) {
 	for _, row := range []struct {
 		name, platform string

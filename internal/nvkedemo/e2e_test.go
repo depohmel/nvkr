@@ -168,8 +168,23 @@ func nativeE2EConfig(ctx context.Context, getenv func(string) string) (BuildConf
 		return BuildConfig{}, Config{}, false, err
 	}
 	build, cfg, err := file.E2EConfig(os.Stdout)
+	if err != nil {
+		return BuildConfig{}, Config{}, false, err
+	}
 	build.DemoExecutable, cfg.DemoExecutable = binary, binary
 	build.NVKECommit = getenv("NVKR_NVKE_E2E_SOURCE_COMMIT")
+	if build.NVKECommit != "" {
+		// Resolve descriptions against the original working directory before the
+		// exact-source test enters its repository for local input preparation.
+		for _, path := range []*string{&build.Repository, &build.NVKEClone, &cfg.Repository, &cfg.NVKECheckout, &cfg.Out} {
+			if *path != "" {
+				*path, err = filepath.Abs(*path)
+				if err != nil {
+					return BuildConfig{}, Config{}, false, configUsage("resolve exact-source E2E path: " + err.Error())
+				}
+			}
+		}
+	}
 	return build, cfg, tenant || cfg.Conformance, err
 }
 
