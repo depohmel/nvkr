@@ -39,8 +39,10 @@ not invoke it. Published native conformance remains unsupported.
 The same coordinator and generated producer admit one additional exact branch,
 `nvkr-validation`. An operator approves the exact current PR commit before moving
 that automation-owned branch. It is not an automatic untrusted-PR execution path.
-Run the reviewed operator helper from a trusted checkout, never the candidate's
-copy of the helper:
+Run a reviewed operator-helper revision from a trusted operator checkout; never
+trust a helper solely because it arrived with a new candidate. For the initial
+rollout, review and pin this PR's helper revision to establish that trusted copy.
+Merging the helper is not a prerequisite:
 
 ```sh
 bash scripts/nightly-validate.sh --approve PR_NUMBER EXACT_40_CHARACTER_COMMIT /absolute/fresh/output

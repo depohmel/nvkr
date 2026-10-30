@@ -74,13 +74,35 @@ case "$method $endpoint" in
     printf '{"deployment_branch_policy":{"custom_branch_policies":true}}\n' ;;
   'GET repos/dsx-ai-factory/nvkr/environments/'*'/deployment-branch-policies?per_page=100')
     printf '{"total_count":1,"branch_policies":[{"type":"branch","name":"nvkr-validation"}]}\n' ;;
-  'GET repos/dsx-ai-factory/nvkr/git/matching-refs/heads/nvkr-validation') cat "$FAKE_GH_ROOT/refs.json" ;;
+  'GET repos/dsx-ai-factory/nvkr/git/matching-refs/heads/nvkr-validation')
+    cat "$FAKE_GH_ROOT/refs.json"
+    if [[ ${FAKE_STALE_PROMOTION:-false} == true ]]; then
+      jq 'map(if .ref == "refs/heads/nvkr-validation" then .object.sha = "dddddddddddddddddddddddddddddddddddddddd" else . end)' \
+        "$FAKE_GH_ROOT/refs.json" >"$FAKE_GH_ROOT/refs-next.json"
+      mv "$FAKE_GH_ROOT/refs-next.json" "$FAKE_GH_ROOT/refs.json"
+    fi ;;
   'GET graphql')
     jq -c '.variables.input.refUpdates' "$input" >>"$FAKE_GH_ROOT/ref-updates"
-    if [[ ${FAKE_CAS_FAILURE:-false} == true ]]; then
+    # Check the complete expected state before applying any fixture ref update.
+    if [[ ${FAKE_CAS_FAILURE:-false} == true ]] || ! jq -e --slurpfile request "$input" \
+      --arg zero 0000000000000000000000000000000000000000 '
+      . as $refs | all($request[0].variables.input.refUpdates[];
+        . as $update | [$refs[] | select(.ref == $update.name)] as $current |
+        if ($current | length) == 0 then $update.beforeOid == $zero
+        elif ($current | length) == 1 then $update.beforeOid == $current[0].object.sha
+        else false end)' "$FAKE_GH_ROOT/refs.json" >/dev/null; then
       printf '{"errors":[{"message":"reference changed"}]}\n'
-    else printf '{"data":{"updateRefs":{"clientMutationId":null}}}\n'; fi ;;
-  'GET repos/dsx-ai-factory/nvkr/git/ref/heads/nvkr-validation') cat "$FAKE_GH_ROOT/promoted.json" ;;
+    else
+      jq --slurpfile request "$input" '
+        reduce $request[0].variables.input.refUpdates[] as $update (.;
+          map(select(.ref != $update.name)) +
+          [{ref:$update.name,object:{type:"commit",sha:$update.afterOid}}])' \
+        "$FAKE_GH_ROOT/refs.json" >"$FAKE_GH_ROOT/refs-next.json"
+      mv "$FAKE_GH_ROOT/refs-next.json" "$FAKE_GH_ROOT/refs.json"
+      printf '{"data":{"updateRefs":{"clientMutationId":null}}}\n'
+    fi ;;
+  'GET repos/dsx-ai-factory/nvkr/git/ref/heads/nvkr-validation')
+    jq -e '.[] | select(.ref == "refs/heads/nvkr-validation")' "$FAKE_GH_ROOT/refs.json" ;;
   'POST repos/dsx-ai-factory/nvkr/actions/workflows/nvkr-nightly.yml/dispatches')
     cp "$input" "$FAKE_GH_ROOT/dispatched.json"
     [[ ${FAKE_DISPATCH_FAILURE:-false} != true ]] || exit 17
@@ -101,7 +123,6 @@ func newValidationFixture(t *testing.T) *nightlyFixture {
 	fixtureJSON(t, filepath.Join(f.root, "repository.json"), map[string]any{"id": 1363007688, "node_id": "R_validation_fixture", "full_name": "dsx-ai-factory/nvkr", "default_branch": "main"})
 	fixtureJSON(t, filepath.Join(f.root, "pr.json"), map[string]any{"head": map[string]string{"sha": nightlySHA}, "state": "open", "draft": false, "base": map[string]any{"ref": "main", "repo": map[string]string{"full_name": "dsx-ai-factory/nvkr"}}})
 	ref := map[string]any{"ref": "refs/heads/nvkr-validation", "object": map[string]string{"type": "commit", "sha": nightlySHA}}
-	fixtureJSON(t, filepath.Join(f.root, "promoted.json"), ref)
 	fixtureJSON(t, filepath.Join(f.root, "mirror.json"), ref)
 	fixtureJSON(t, filepath.Join(f.root, "refs.json"), []map[string]any{{"ref": "refs/heads/nvkr-validation", "object": map[string]string{"type": "commit", "sha": strings.Repeat("c", 40)}}})
 	fixtureJSON(t, filepath.Join(f.root, "dispatch.json"), map[string]int{"workflow_run_id": 7777})
@@ -166,6 +187,31 @@ func validationRefUpdates(t *testing.T, f *nightlyFixture) [][]map[string]any {
 	return requests
 }
 
+func validationRefState(t *testing.T, f *nightlyFixture) map[string]string {
+	t.Helper()
+	raw, err := os.ReadFile(filepath.Join(f.root, "refs.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var refs []struct {
+		Ref    string `json:"ref"`
+		Object struct {
+			SHA string `json:"sha"`
+		} `json:"object"`
+	}
+	if err := json.Unmarshal(raw, &refs); err != nil {
+		t.Fatal(err)
+	}
+	state := make(map[string]string, len(refs))
+	for _, ref := range refs {
+		if _, duplicate := state[ref.Ref]; duplicate {
+			t.Fatalf("duplicate fixture ref %s", ref.Ref)
+		}
+		state[ref.Ref] = ref.Object.SHA
+	}
+	return state
+}
+
 func assertValidationFailure(t *testing.T, output string, status, want int) {
 	t.Helper()
 	codes := map[int]string{2: "NVKR-E-USAGE", 21: "NVKR-E-BUILD-FAILED", 22: "NVKR-E-VERIFY-FAILED", 30: "NVKR-E-UNAVAILABLE", 47: "NVKR-E-IMMUTABLE-VIOLATION", 49: "NVKR-E-UNPINNED-INPUT"}
@@ -183,6 +229,10 @@ func TestNightlyValidationPromotesAndTestsOnlyApprovedCandidate(t *testing.T) {
 	updates := validationRefUpdates(t, f)
 	if len(updates) != 2 || len(updates[0]) != 2 || updates[0][0]["name"] != "refs/heads/nvkr-validation-lock" || updates[0][0]["beforeOid"] != strings.Repeat("0", 40) || updates[0][0]["afterOid"] != nightlySHA || updates[0][0]["force"] != true || updates[0][1]["name"] != "refs/heads/nvkr-validation" || updates[0][1]["beforeOid"] != strings.Repeat("c", 40) || updates[0][1]["afterOid"] != nightlySHA || len(updates[1]) != 1 || updates[1][0]["name"] != "refs/heads/nvkr-validation-lock" || updates[1][0]["beforeOid"] != nightlySHA || updates[1][0]["afterOid"] != validationIdleMarker || updates[1][0]["force"] != true {
 		t.Fatalf("promotion or release escaped leased candidate refs: %+v", updates)
+	}
+	state := validationRefState(t, f)
+	if len(state) != 2 || state["refs/heads/nvkr-validation"] != nightlySHA || state["refs/heads/nvkr-validation-lock"] != validationIdleMarker {
+		t.Fatalf("successful CAS did not persist both candidate and idle lock: %+v", state)
 	}
 	var request struct {
 		Ref    string         `json:"ref"`
@@ -314,6 +364,10 @@ func TestNightlyValidationRecoveryRestoresPersistentIdleMarker(t *testing.T) {
 	for _, sha := range []string{nightlySHA, validationIdleMarker} {
 		t.Run(sha, func(t *testing.T) {
 			f := newValidationFixture(t)
+			fixtureJSON(t, filepath.Join(f.root, "refs.json"), []map[string]any{
+				{"ref": "refs/heads/nvkr-validation", "object": map[string]string{"type": "commit", "sha": strings.Repeat("c", 40)}},
+				{"ref": "refs/heads/nvkr-validation-lock", "object": map[string]string{"type": "commit", "sha": sha}},
+			})
 			f.setEnv("FAKE_MAIN_NIGHTLY_STATUS", "waiting")
 			output, status := runValidationAtCommit(t, f, "--unlock", sha)
 			if status != 0 {
@@ -323,12 +377,63 @@ func TestNightlyValidationRecoveryRestoresPersistentIdleMarker(t *testing.T) {
 			if len(updates) != 1 || len(updates[0]) != 1 || updates[0][0]["name"] != "refs/heads/nvkr-validation-lock" || updates[0][0]["beforeOid"] != sha || updates[0][0]["afterOid"] != validationIdleMarker || updates[0][0]["force"] != true {
 				t.Fatalf("recovery did not CAS only the lock to its idle marker: %+v", updates)
 			}
+			state := validationRefState(t, f)
+			if len(state) != 2 || state["refs/heads/nvkr-validation-lock"] != validationIdleMarker || state["refs/heads/nvkr-validation"] != strings.Repeat("c", 40) {
+				t.Fatalf("recovery changed candidate or failed to persist idle lock: %+v", state)
+			}
 			for _, call := range f.calls(t) {
 				if strings.Contains(call, "workflows/nvkr-nightly.yml/runs?branch=main") {
 					t.Fatal("candidate recovery unnecessarily waited for the main nightly")
 				}
 			}
 		})
+	}
+}
+
+func TestNightlyValidationRecoveryRejectsStaleLockWithoutChangingRefs(t *testing.T) {
+	f := newValidationFixture(t)
+	fixtureJSON(t, filepath.Join(f.root, "refs.json"), []map[string]any{
+		{"ref": "refs/heads/nvkr-validation", "object": map[string]string{"type": "commit", "sha": strings.Repeat("c", 40)}},
+		{"ref": "refs/heads/nvkr-validation-lock", "object": map[string]string{"type": "commit", "sha": strings.Repeat("b", 40)}},
+	})
+	before, err := os.ReadFile(filepath.Join(f.root, "refs.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	output, status := runValidation(t, f, "--unlock")
+	assertValidationFailure(t, output, status, 47)
+	after, err := os.ReadFile(filepath.Join(f.root, "refs.json"))
+	if err != nil || string(after) != string(before) {
+		t.Fatalf("stale unlock changed provider ref state: %s (%v)", after, err)
+	}
+	updates := validationRefUpdates(t, f)
+	if len(updates) != 1 || len(updates[0]) != 1 || updates[0][0]["name"] != "refs/heads/nvkr-validation-lock" {
+		t.Fatalf("stale recovery requested unrelated ref writes: %+v", updates)
+	}
+	for _, call := range f.calls(t) {
+		if strings.HasPrefix(call, "POST ") || strings.Contains(call, "DOWNLOAD") {
+			t.Fatalf("stale recovery dispatched work: %v", f.calls(t))
+		}
+	}
+}
+
+func TestNightlyValidationStalePromotionDoesNotPartiallyAcquireLock(t *testing.T) {
+	f := newValidationFixture(t)
+	f.setEnv("FAKE_STALE_PROMOTION", "true")
+	output, status := runValidation(t, f, "--approve")
+	assertValidationFailure(t, output, status, 47)
+	state := validationRefState(t, f)
+	if len(state) != 1 || state["refs/heads/nvkr-validation"] != strings.Repeat("d", 40) {
+		t.Fatalf("rejected multi-ref CAS partially acquired the lock or changed raced candidate: %+v", state)
+	}
+	updates := validationRefUpdates(t, f)
+	if len(updates) != 1 || len(updates[0]) != 2 {
+		t.Fatalf("stale promotion did not attempt one atomic two-ref CAS: %+v", updates)
+	}
+	for _, call := range f.calls(t) {
+		if strings.HasPrefix(call, "POST ") {
+			t.Fatalf("stale promotion dispatched work: %v", f.calls(t))
+		}
 	}
 }
 
