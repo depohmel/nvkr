@@ -103,7 +103,8 @@ type nightlyCoordinatorDocument struct {
 	Permissions map[string]string                `json:"permissions"`
 	Jobs        map[string]nightlyCoordinatorJob `json:"jobs"`
 	Concurrency struct {
-		CancelInProgress bool `json:"cancel-in-progress"`
+		Group            string `json:"group"`
+		CancelInProgress bool   `json:"cancel-in-progress"`
 	} `json:"concurrency"`
 }
 
@@ -185,7 +186,7 @@ func TestNightlyDispatchesGeneratedProducerBeforeNativeConsumer(t *testing.T) {
 	if err := json.Unmarshal(workflow.On["schedule"], &schedule); err != nil || len(schedule) != 1 || schedule[0].Cron != "17 3 * * *" || workflow.On["workflow_dispatch"] == nil {
 		t.Fatalf("daily/manual trigger changed: %+v %v", schedule, err)
 	}
-	if len(workflow.On) != 2 || len(workflow.Jobs) != 4 || workflow.Concurrency.CancelInProgress || !reflect.DeepEqual(workflow.Permissions, map[string]string{"contents": "read"}) {
+	if len(workflow.On) != 2 || len(workflow.Jobs) != 4 || workflow.Concurrency.CancelInProgress || workflow.Concurrency.Group != "nvkr-nightly-main" || !reflect.DeepEqual(workflow.Permissions, map[string]string{"contents": "read"}) {
 		t.Fatal("nightly lost its bounded generated-producer/consumer orchestration")
 	}
 	for name, job := range workflow.Jobs {

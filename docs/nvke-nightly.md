@@ -62,6 +62,13 @@ automation-owned lock and replaces the candidate branch only if its previously
 observed commit still matches. It does not update `main`, the PR branch or the
 mirror. Both candidate refs are reserved for this workflow, not human development.
 Existing candidate runs, including waiting deployments, prevent another promotion.
+The helper also requires the main nightly coordinator to be idle before promotion
+and checks it again before dispatch. Main and candidate coordinators share the
+deployed `nvkr-nightly-main` workflow concurrency group, so they cannot reach the
+native runtime slot concurrently. Other main-branch workflows do not block this
+admission. GitHub's default single-pending queue can replace a queued invocation;
+there is no FIFO guarantee. Such cancellation fails the exact validation and
+retains its lease for explicit recovery rather than accepting another run.
 The persistent lock's idle value is the existing Git checkpoint
 `e74161ab5b41b89e0f4a6e9dce790664059a6d47`. That value is only a concurrency
 marker; it grants no artifact or release authority. Any other value holds the

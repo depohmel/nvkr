@@ -62,6 +62,14 @@ case "$method $endpoint" in
     if [[ ${FAKE_WAITING_RUN:-false} == true && $endpoint == *'status=waiting&'* ]]; then
       printf '{"total_count":0,"workflow_runs":[]}\n{"total_count":1,"workflow_runs":[{"id":999,"status":"waiting"}]}\n'
     else printf '{"total_count":0,"workflow_runs":[]}\n'; fi ;;
+  'GET repos/dsx-ai-factory/nvkr/actions/workflows/nvkr-nightly.yml/runs?branch=main&status='*)
+    [[ ${FAKE_MAIN_NIGHTLY_ERROR:-false} != true ]] || exit 17
+    if [[ ${FAKE_MAIN_NIGHTLY_TRUNCATED:-false} == true ]]; then
+      printf '{"total_count":0,"workflow_runs":[]}\n{"total_count":1,"workflow_runs":[{"id":998}]}\n'
+    elif [[ -n ${FAKE_MAIN_NIGHTLY_STATUS:-} && $endpoint == *"status=$FAKE_MAIN_NIGHTLY_STATUS&"* &&
+        ( ${FAKE_MAIN_NIGHTLY_RACE:-false} != true || -f $FAKE_GH_ROOT/ref-updates ) ]]; then
+      printf '{"total_count":1,"workflow_runs":[{"id":998}]}\n'
+    else printf '{"total_count":0,"workflow_runs":[]}\n'; fi ;;
   'GET repos/dsx-ai-factory/nvkr/environments/nvkr-arc'|'GET repos/dsx-ai-factory/nvkr/environments/nvkr-release')
     printf '{"deployment_branch_policy":{"custom_branch_policies":true}}\n' ;;
   'GET repos/dsx-ai-factory/nvkr/environments/'*'/deployment-branch-policies?per_page=100')
@@ -184,6 +192,61 @@ func TestNightlyValidationPromotesAndTestsOnlyApprovedCandidate(t *testing.T) {
 	if err != nil || json.Unmarshal(raw, &request) != nil || request.Ref != "nvkr-validation" || request.Inputs["candidate_sha"] != nightlySHA || request.Inputs["candidate_pr"] != "42" || request.Inputs["tenant_checks"] != true || request.Inputs["profile"] != "nvke-nightly-arm64" {
 		t.Fatalf("dispatch lost approved candidate or full tenant selection: %s (%v)", raw, err)
 	}
+	for _, state := range []string{"queued", "requested", "waiting", "pending", "in_progress"} {
+		endpoint := "GET repos/dsx-ai-factory/nvkr/actions/workflows/nvkr-nightly.yml/runs?branch=main&status=" + state + "&per_page=100"
+		checks := 0
+		for _, call := range f.calls(t) {
+			if call == endpoint {
+				checks++
+			}
+		}
+		if checks != 2 {
+			t.Fatalf("main nightly %s checked %d times, want before and after promotion", state, checks)
+		}
+	}
+}
+
+func TestNightlyValidationRejectsNonIdleMainCoordinatorBeforePromotion(t *testing.T) {
+	for _, scenario := range []string{"queued", "requested", "waiting", "pending", "in_progress", "provider error", "another page"} {
+		t.Run(scenario, func(t *testing.T) {
+			f := newValidationFixture(t)
+			switch scenario {
+			case "provider error":
+				f.setEnv("FAKE_MAIN_NIGHTLY_ERROR", "true")
+			case "another page":
+				f.setEnv("FAKE_MAIN_NIGHTLY_TRUNCATED", "true")
+			default:
+				f.setEnv("FAKE_MAIN_NIGHTLY_STATUS", scenario)
+			}
+			output, status := runValidation(t, f, "--approve")
+			assertValidationFailure(t, output, status, 30)
+			if len(validationRefUpdates(t, f)) != 0 {
+				t.Fatal("main nightly admission changed candidate refs")
+			}
+			for _, call := range f.calls(t) {
+				if strings.Contains(call, "graphql") || strings.HasPrefix(call, "POST ") {
+					t.Fatalf("non-idle main nightly performed mutation: %v", f.calls(t))
+				}
+			}
+		})
+	}
+}
+
+func TestNightlyValidationRetainsLeaseWhenMainRacesPromotion(t *testing.T) {
+	f := newValidationFixture(t)
+	f.setEnv("FAKE_MAIN_NIGHTLY_STATUS", "waiting")
+	f.setEnv("FAKE_MAIN_NIGHTLY_RACE", "true")
+	output, status := runValidation(t, f, "--approve")
+	assertValidationFailure(t, output, status, 30)
+	updates := validationRefUpdates(t, f)
+	if len(updates) != 1 || len(updates[0]) != 2 || !strings.Contains(output, "lock retained after incomplete validation") {
+		t.Fatalf("main race released its candidate lease: %+v\n%s", updates, output)
+	}
+	for _, call := range f.calls(t) {
+		if strings.HasPrefix(call, "POST ") || strings.Contains(call, "DOWNLOAD") {
+			t.Fatalf("main race dispatched candidate work: %v", f.calls(t))
+		}
+	}
 }
 
 func TestNightlyValidationReusesExactIdleLockMarker(t *testing.T) {
@@ -251,6 +314,7 @@ func TestNightlyValidationRecoveryRestoresPersistentIdleMarker(t *testing.T) {
 	for _, sha := range []string{nightlySHA, validationIdleMarker} {
 		t.Run(sha, func(t *testing.T) {
 			f := newValidationFixture(t)
+			f.setEnv("FAKE_MAIN_NIGHTLY_STATUS", "waiting")
 			output, status := runValidationAtCommit(t, f, "--unlock", sha)
 			if status != 0 {
 				t.Fatalf("idle recovery failed: %d\n%s", status, output)
@@ -258,6 +322,11 @@ func TestNightlyValidationRecoveryRestoresPersistentIdleMarker(t *testing.T) {
 			updates := validationRefUpdates(t, f)
 			if len(updates) != 1 || len(updates[0]) != 1 || updates[0][0]["name"] != "refs/heads/nvkr-validation-lock" || updates[0][0]["beforeOid"] != sha || updates[0][0]["afterOid"] != validationIdleMarker || updates[0][0]["force"] != true {
 				t.Fatalf("recovery did not CAS only the lock to its idle marker: %+v", updates)
+			}
+			for _, call := range f.calls(t) {
+				if strings.Contains(call, "workflows/nvkr-nightly.yml/runs?branch=main") {
+					t.Fatal("candidate recovery unnecessarily waited for the main nightly")
+				}
 			}
 		})
 	}

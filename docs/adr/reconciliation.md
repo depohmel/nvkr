@@ -3576,6 +3576,11 @@ Lock release/recovery uses an exact CAS back to an existing Git-checkpoint idle
 marker, never ref deletion. This allows both automation refs to remain undeletable
 while limiting creation/force updates to the operator. The marker is concurrency
 state, outside artifact and release authority.
+Main and candidate coordinator execution share the deployed noncanceling workflow
+group. The operator checks main-coordinator nonterminal states before and after
+promotion; an observed race retains the lease without dispatch. Default pending
+queue replacement is reported as exact-run failure, not treated as successful
+runtime execution or a FIFO guarantee.
 
 The archive correction selects source-built tarball assets in executable bundles
 through exact resolved-component and producer/output membership. Helm and disk

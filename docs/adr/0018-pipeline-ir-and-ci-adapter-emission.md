@@ -552,6 +552,11 @@ through exact compare-and-swap; acquisition admits only that marker or an absent
 first-use ref. Neither ref is deleted, so branch protections can disable deletion
 and admit creation/force updates only for the operator. The marker grants no
 artifact or release authority.
+Main and validation coordinators retain the same deployed workflow concurrency
+group, with noncanceling active execution. Admission checks the main coordinator's
+nonterminal states before promotion and again before dispatch. Default pending
+queue replacement remains possible; cancellation is an exact-run failure that
+retains the lease, not a FIFO or eventual-execution guarantee.
 Pre-merge acceptance requires completed build/runtime jobs and the exact full
 runtime/tenant/cleanup verdict, and rechecks the current PR head. This manual
 evidence does not itself install a required GitHub status check.

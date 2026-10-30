@@ -33,7 +33,8 @@ permissions:
   contents: read
 
 concurrency:
-  group: nvkr-nightly-${{ github.ref_name }}
+  # Match the deployed main workflow so candidates serialize even before merge.
+  group: nvkr-nightly-main
   cancel-in-progress: false
 
 jobs:

@@ -67,6 +67,15 @@ idle() {
     jq -se 'length == 1 and .[0].total_count == 0 and .[0].workflow_runs == []' "$out/branch-runs.json" >/dev/null || return 1
   done
 }
+main_nightly_idle() {
+  local status
+  # Only the registered main nightly shares this candidate's coordinator slot.
+  # Unrelated main workflows do not prevent validation or operator recovery.
+  for status in queued requested waiting pending in_progress; do
+    api --paginate "repos/$repo/actions/workflows/nvkr-nightly.yml/runs?branch=main&status=$status&per_page=100" >"$out/main-nightly-runs.json" || return 1
+    jq -se 'length == 1 and .[0].total_count == 0 and .[0].workflow_runs == []' "$out/main-nightly-runs.json" >/dev/null || return 1
+  done
+}
 refs_update() {
   local updates=$1
   jq -n --arg repo "$repository_id" --argjson updates "$updates" '{
@@ -130,6 +139,7 @@ if [[ $mode == --unlock ]]; then
 fi
 check_pr
 idle || fail NVKR-E-UNAVAILABLE 'an earlier validation run is active; do not move its branch' 30
+main_nightly_idle || fail NVKR-E-UNAVAILABLE 'the main nightly is active or unreadable; do not promote the candidate' 30
 for environment in nvkr-arc nvkr-release; do
   api "repos/$repo/environments/$environment" >"$out/environment.json"
   jq -e '.deployment_branch_policy.custom_branch_policies == true' "$out/environment.json" >/dev/null ||
@@ -164,6 +174,7 @@ updates=$(jq -nc --arg sha "$sha" --arg before "$before" --arg lock_before "$loc
 refs_update "$updates" || fail NVKR-E-IMMUTABLE-VIOLATION 'promotion was not confirmed; inspect the exact candidate and lock before recovery' 47
 owned=true
 idle || fail NVKR-E-UNAVAILABLE 'another validation run appeared; candidate remains frozen' 30
+main_nightly_idle || fail NVKR-E-UNAVAILABLE 'the main nightly appeared after promotion; candidate remains frozen' 30
 check_pr
 api "repos/$repo/git/ref/heads/$branch" >"$out/promoted.json"
 jq -e --arg sha "$sha" '.object.sha == $sha and .object.type == "commit"' "$out/promoted.json" >/dev/null
