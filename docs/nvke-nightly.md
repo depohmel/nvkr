@@ -43,6 +43,14 @@ Exact-source nightly builds retain machine-command stdout in their bounded
 captures and private logs instead of forwarding large Plan JSON to Actions.
 Command stderr and the final build's ordinary output continue streaming.
 
+The CI resource wrapper samples host memory/disk, cgroup memory events and Docker
+usage while the Go test runs, with a 15-second pause between samples. It records
+bounded kernel warnings before and after the workload. It preserves workload
+failures and fails an otherwise successful invocation if the sampler cannot join. These observations can help investigate a
+runner shutdown; they establish neither its sender nor minimum resource
+requirements. Product files, process arguments and environments are not printed
+by the sampler.
+
 Before checkout and builds, the disposable runner removes its unused Android,
 .NET and Haskell SDK directories and records free space before and after cleanup.
 It avoids recursive size diagnostics that can time out before cleanup starts.

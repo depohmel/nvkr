@@ -85,7 +85,7 @@ jobs:
             acl git make gcc libc6-dev jq coreutils python3 openssh-client bash curl openssl \
             libvirt-daemon-system libvirt-clients qemu-utils qemu-system-x86 ovmf \
             cloud-image-utils swtpm swtpm-tools gnutls-bin ipxe-qemu \
-            dnsmasq-base iptables iproute2 libcap2-bin e2fsprogs kmod
+            dnsmasq-base iptables iproute2 libcap2-bin e2fsprogs kmod time
           sudo -n setfacl -m "u:$(id -un):rw" /dev/kvm
           (exec 3<>/dev/kvm)
           sudo -n -k timeout --signal=TERM --kill-after=5s 25s true
@@ -143,7 +143,8 @@ jobs:
           remaining=$(( NVKR_JOB_DEADLINE - $(date +%s) ))
           # TestEndToEnd reserves two hours inside this deadline for owned cleanup.
           (( remaining > 125 * 60 ))
-          go test ./internal/nvkedemo -run '^TestEndToEnd$' -count=1 -v -timeout "${remaining}s"
+          bash scripts/ci-measure-workload.sh \
+            go test ./internal/nvkedemo -run '^TestEndToEnd$' -count=1 -v -timeout "${remaining}s"
       - name: Record final hosted allocation
         if: always()
         run: |
