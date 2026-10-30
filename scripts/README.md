@@ -176,7 +176,7 @@ Signer-policy rejection is covered by the owning consumer contract tests.
 
 ## Focused supporting contracts
 
-The authored nightly workflow uses `nightly-build.sh` to dispatch and join the
+The retained publishing diagnostic uses `nightly-build.sh` to dispatch and join the
 existing generated producer, retaining its exact Run and frozen source selection.
 The Go E2E consumer authenticates that Run's private artifacts and performs native
 site bootstrap, readiness checks and cleanup without rebuilding NVKE. See the

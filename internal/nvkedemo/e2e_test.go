@@ -32,6 +32,12 @@ func TestEndToEnd(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	if err := admitLocalNVKESource(build, runtime.GOOS+"/"+runtime.GOARCH); err != nil {
+		t.Fatal(err)
+	}
+	if build.NVKECommit != "" {
+		t.Chdir(build.Repository)
+	}
 	if err := admitNativeBuildHost(runtime.GOOS + "/" + runtime.GOARCH); err != nil {
 		t.Fatal(err)
 	}
@@ -163,6 +169,7 @@ func nativeE2EConfig(ctx context.Context, getenv func(string) string) (BuildConf
 	}
 	build, cfg, err := file.E2EConfig(os.Stdout)
 	build.DemoExecutable, cfg.DemoExecutable = binary, binary
+	build.NVKECommit = getenv("NVKR_NVKE_E2E_SOURCE_COMMIT")
 	return build, cfg, tenant || cfg.Conformance, err
 }
 

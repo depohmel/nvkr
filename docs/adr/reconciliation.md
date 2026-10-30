@@ -3556,48 +3556,33 @@ extraction and image export retain delivery ownership. The downstream harness
 uses the held publication directly rather than adding another command interface.
 
 The standalone input-staging command and compile-only adapter are removed.
-The [NVKE nightly workflow](../nvke-nightly.md) resolves one exact NVKE main
-commit and dispatches the existing generated ARM64 NVIDIA producer. Its 34 named
-outputs include the native host/site inputs used by the consumer. The runtime
-source policy binds all source-built NVKE products and finalization to that
-cycle commit and requires Git ancestry proof under `main`, while independent
-dependency pins retain their owners. Finalization rechecks the then-current `main`;
-a delayed retry outside the 64-commit fetch window or a ref rewrite removing the
-frozen commit fails closed before a Run record is issued, even if signing and
-publication already completed. The first
-consumer runs on `arc-arm64-kvm`; no parallel AMD64 producer bundle is added.
+The [NVKE nightly workflow](../nvke-nightly.md) now selects one public hosted
+AMD64 job for build and native NVKR Go E2E. It freezes NVKE main once and derives
+temporary source overlays through the existing catalog/local-input owners before
+the normal toolchain preparation. The existing AMD64 NVIDIA Definition/catalogs
+remain the authored selection, with existing current-main disk-material/CAPI-init
+compatibility selections. Other dependency pins and committed files are unchanged.
+`TestEndToEnd` builds fresh local Runs, bootstraps the real site
+VM through kind/Lima, checks readiness and tenant workload/DNS, and joins cleanup.
 
-`TestNightlyPublishedCandidate` retrieves the exact producing Run, same-Run Plan
-and publication locator. It uses lifecycle exact-input verification and the
-producer's invocation to admit the held publication, and rejects a source-policy
-Plan that differs from the coordinator's selected NVKE commit. The existing Go
-native owners consume the authenticated CLI, images, disk and installer without
-a second product build or fabricated local Run. They bootstrap the site VM through
-a temporary kind/Lima backend, check the live API and Ready node, and join owned
-cleanup. Tenant workload/DNS checks remain manual opt-ins. Local `TestEndToEnd`
-retains its separate fresh-build developer flow, with site smoke by default and
-tenant/conformance checks selected explicitly. Its host-matched Linux AMD64
-defaults do not add an AMD64 generated nightly producer or a recorded runtime
-acceptance result.
+Ordinary manual branch dispatch and the daily 03:17 UTC trigger are retained.
+There is no promotion helper, lock ref, NVIDIA runner or protected environment,
+repository secret, signing/publication permission, Actions upload or shared cache
+in this workflow. Product bytes and raw diagnostics remain on its disposable
+runner disk. The generated ARM64 publishing workflows and
+`TestNightlyPublishedCandidate` retain their independent diagnostic scope and
+existing private-artifact authentication; no new generated producer is added.
 
-Local contracts cover exact producer/provider/artifact joins, private CI carrier
-restoration, frozen source selection, publication receipts and source/installer
-agreement. Deadline, joined-verdict and real SIGINT/SIGTERM subprocess tests pass;
-these establish local behavior, not a completed hosted cycle. Producer products
-and raw diagnostics remain in private transport/publication storage. Coordinator
-Actions uploads contain only constructed selection, producing-Run locator and
-cycle-verdict JSON. The runtime receives independent registry/private-storage
-readers, no writer or OIDC permissions, and disables the shared Go Actions cache.
-Every job has an explicit timeout; native runtime reserves 125 minutes for cleanup,
-reporting and margin within its six-hour job. The complete current ARM64 nightly
-build/publication/bootstrap/cleanup cycle remains unverified. Public AMD64 runtime
-coverage awaits admitted artifact production support.
-
-NVKE code is trusted with sudo and Docker access under the runner UID. Private
-paths and environment scrubbing provide no independent sandbox, and test results
-remain unsigned diagnostics. Existing ADR-16 conformance and generated producer
-identity/result contracts are unchanged. The daily 03:17 UTC trigger is retained
-at the user's explicit request.
+The six-hour job passes its remaining deadline to Go, which reserves two hours
+for independent cleanup. KVM and actual available resources are admitted at run
+time. The explicit 4-GiB site/2-GiB tenant profile is an initial sizing experiment,
+not a validated minimum. Historical [public Run 40578231640](https://github.com/depohmel/nvkr/actions/runs/40578231640)
+built a QCOW2 and passed NVKE's separate harness on AMD64 KVM, but encountered
+severe disk pressure and used best-effort teardown. It does not establish this
+native NVKR topology, fresh source closure or joined cleanup. Full hosted
+acceptance requires a completed current run; local tests establish contracts only.
+Trusted source code retains sudo/Docker access on the disposable hosted machine.
+These unsigned local diagnostics grant no qualified release acceptance.
 
 The archive correction selects source-built tarball assets in executable bundles
 through exact resolved-component and producer/output membership. Helm and disk

@@ -257,3 +257,66 @@ func TestNativeE2EMacBuildUsesExplicitDistributionBeforeWork(t *testing.T) {
 		t.Fatalf("explicit native distribution was not selected: %v", err)
 	}
 }
+
+func TestNativeE2ESourceSelectionIsExplicit(t *testing.T) {
+	for _, commit := range []string{"", strings.Repeat("a", 40)} {
+		t.Run(commit, func(t *testing.T) {
+			values := map[string]string{"NVKR_NVKE_E2E_REPO": "/source/nvkr", "NVKR_NVKE_E2E_OUT": "/private/site", "NVKR_NVKE_E2E_ATTEMPT": "nightly-source", "NVKR_NVKE_E2E_SOURCE_COMMIT": commit}
+			build, _, _, err := nativeE2EConfig(t.Context(), func(name string) string { return values[name] })
+			if err != nil {
+				t.Fatal(err)
+			}
+			if build.NVKECommit != commit || build.Definition != "" || build.Environment != "" || build.NVKR != "" {
+				t.Fatal("source selection changed the default native input selection")
+			}
+		})
+	}
+}
+
+func TestLocalNVKESourceRejectsIncompatibleBuildsBeforeWork(t *testing.T) {
+	for _, row := range []struct {
+		name, platform string
+		change         func(*BuildConfig)
+		valid          bool
+	}{
+		{"defaultAMD64", "linux/amd64", func(*BuildConfig) {}, true},
+		{"other architecture", "linux/arm64", func(*BuildConfig) {}, false},
+		{"Mac", "darwin/arm64", func(*BuildConfig) {}, false},
+		{"prepared", "linux/amd64", func(c *BuildConfig) { c.Prepared = true }, false},
+		{"qualification", "linux/amd64", func(c *BuildConfig) { c.QualifyLocal = true }, false},
+		{"policy", "linux/amd64", func(c *BuildConfig) { c.QualificationPolicy = "policy.json" }, false},
+		{"definition", "linux/amd64", func(c *BuildConfig) { c.Definition = "other.json" }, false},
+		{"environment", "linux/amd64", func(c *BuildConfig) { c.Environment = "other.json" }, false},
+		{"explicit builder", "linux/amd64", func(c *BuildConfig) { c.NVKR = "/distribution/nvkr" }, false},
+		{"upstream network", "linux/amd64", func(c *BuildConfig) { c.Network = "upstream-ovn" }, false},
+		{"conformance", "linux/amd64", func(c *BuildConfig) { c.Conformance = true }, false},
+	} {
+		t.Run(row.name, func(t *testing.T) {
+			cfg := BuildConfig{NVKECommit: strings.Repeat("a", 40)}
+			row.change(&cfg)
+			err := admitLocalNVKESource(cfg, row.platform)
+			if row.valid {
+				if err != nil {
+					t.Fatal(err)
+				}
+			} else {
+				assertNightlyCode(t, err, nvkrerr.CodeEngineCapability)
+			}
+			cfg.NVKECommit = ""
+			if err := admitLocalNVKESource(cfg, row.platform); err != nil {
+				t.Fatalf("empty source changed existing default: %v", err)
+			}
+		})
+	}
+}
+
+func TestLocalNVKESourceRejectsMalformedCommitBeforeHostWork(t *testing.T) {
+	for _, commit := range []string{"main", strings.Repeat("A", 40), strings.Repeat("z", 40), strings.Repeat("a", 39)} {
+		t.Run(commit, func(t *testing.T) {
+			// Invalid source syntax precedes even unsupported host admission and does
+			// not require an existing repository or native deployment prerequisites.
+			err := admitLocalNVKESource(BuildConfig{NVKECommit: commit}, "unknown/unknown")
+			assertNightlyCode(t, err, nvkrerr.CodeUsage)
+		})
+	}
+}
