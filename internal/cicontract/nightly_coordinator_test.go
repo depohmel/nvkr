@@ -5,6 +5,7 @@ package cicontract
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"reflect"
 	"strings"
@@ -22,7 +23,12 @@ func TestNightlyUsesOnlyHostedBuildAndGoE2E(t *testing.T) {
 	var workflow struct {
 		On          map[string]json.RawMessage `json:"on"`
 		Permissions map[string]string          `json:"permissions"`
-		Jobs        map[string]struct {
+		Concurrency struct {
+			Group            string `json:"group"`
+			CancelInProgress *bool  `json:"cancel-in-progress"`
+		} `json:"concurrency"`
+		Jobs map[string]struct {
+			If             string            `json:"if"`
 			RunsOn         string            `json:"runs-on"`
 			Environment    string            `json:"environment"`
 			TimeoutMinutes int               `json:"timeout-minutes"`
@@ -45,16 +51,47 @@ func TestNightlyUsesOnlyHostedBuildAndGoE2E(t *testing.T) {
 	if len(workflow.On) != 2 || workflow.On["workflow_dispatch"] == nil || len(workflow.Jobs) != 1 || !reflect.DeepEqual(workflow.Permissions, map[string]string{"contents": "read"}) {
 		t.Fatal("nightly must retain ordinary manual dispatch and read-only permissions")
 	}
+	if workflow.Concurrency.Group != "nvkr-nightly-${{ github.ref }}" || workflow.Concurrency.CancelInProgress == nil || *workflow.Concurrency.CancelInProgress {
+		t.Fatal("nightly must serialize each branch without canceling its owned cleanup")
+	}
 	for name, job := range workflow.Jobs {
-		if job.RunsOn != "ubuntu-24.04" || job.Environment != "" || len(job.Permissions) != 0 || job.TimeoutMinutes <= 0 || job.TimeoutMinutes > 360 {
+		if job.RunsOn != "ubuntu-24.04" || job.Environment != "" || len(job.Permissions) != 0 || job.TimeoutMinutes <= 135 || job.TimeoutMinutes > 360 {
 			t.Fatalf("job %s must use a bounded public hosted runner without protected NVIDIA environments", name)
 		}
-		built, tenant, source, host := false, false, false, false
+		if job.If != "github.event_name != 'schedule' || github.repository == 'dsx-ai-factory/nvkr'" {
+			t.Fatal("nightly schedules must run only upstream while forks retain manual dispatch")
+		}
+		built, tenant, source, host, deadline := false, false, false, false, false
+		nvkrCheckouts := 0
 		for _, step := range job.Steps {
 			host = host || strings.Contains(step.Run, `test "$RUNNER_ENVIRONMENT" = github-hosted`)
 			source = source || strings.Contains(step.Run, "NVKR_NVKE_E2E_SOURCE_COMMIT=")
+			// The authored arithmetic leaves ten minutes before the job's hard
+			// deadline; Go reserves independent cleanup time inside that deadline.
+			deadline = deadline || (strings.Contains(step.Run, "NVKR_JOB_DEADLINE=%s") && strings.Contains(step.Run, fmt.Sprintf("+ %d * 60 ))", job.TimeoutMinutes-10)))
+			if step.Uses != "" {
+				_, pin, found := strings.Cut(step.Uses, "@")
+				if !found || len(pin) != 40 || strings.Trim(pin, "0123456789abcdef") != "" {
+					t.Fatalf("nightly action must be pinned by a full commit SHA: %q", step.Uses)
+				}
+			}
+			if strings.HasPrefix(step.Uses, "actions/checkout@") {
+				if step.With["persist-credentials"] != false {
+					t.Fatal("nightly checkouts must not retain credentials")
+				}
+				if step.With["repository"] == nil {
+					nvkrCheckouts++
+					if step.With["ref"] != "${{ github.sha }}" {
+						t.Fatal("NVKR checkout must use the dispatched commit")
+					}
+				}
+			}
 			if strings.Contains(step.Run, "go test ./internal/nvkedemo -run '^TestEndToEnd$'") {
-				built = step.Env["NVKR_NVKE_E2E"] == "1" && strings.Contains(step.Run, `-timeout "${remaining}s"`)
+				guard := "timeout --kill-after=10s 180s go test ./internal/nvkedemo -list '^TestEndToEnd$' | grep -Fx TestEndToEnd"
+				guardAt := strings.Index(step.Run, guard)
+				built = step.Env["NVKR_NVKE_E2E"] == "1" && strings.Contains(step.Run, `-timeout "${remaining}s"`) &&
+					strings.Contains(step.Run, "set -euo pipefail") && strings.Contains(step.Run, "(( remaining > 125 * 60 ))") &&
+					guardAt >= 0 && guardAt < strings.Index(step.Run, "remaining=$(( NVKR_JOB_DEADLINE")
 				tenant = step.Env["NVKR_NVKE_E2E_TENANT"] == "1"
 			}
 			if strings.HasPrefix(step.Uses, "actions/setup-go@") && step.With["cache"] != false {
@@ -64,7 +101,7 @@ func TestNightlyUsesOnlyHostedBuildAndGoE2E(t *testing.T) {
 				t.Fatal("nightly must not enable Buildx binary caching")
 			}
 		}
-		if !built || !tenant || !source || !host {
+		if !built || !tenant || !source || !host || !deadline || nvkrCheckouts != 1 {
 			t.Fatal("nightly must build the frozen main source and run the native site/tenant Go E2E on an admitted hosted runner")
 		}
 	}

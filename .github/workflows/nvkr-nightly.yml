@@ -19,6 +19,7 @@ concurrency:
 jobs:
   e2e:
     name: Build latest NVKE and run NVKR Go E2E (AMD64)
+    if: github.event_name != 'schedule' || github.repository == 'dsx-ai-factory/nvkr'
     runs-on: ubuntu-24.04
     timeout-minutes: 360
     env:
@@ -140,6 +141,7 @@ jobs:
           NVKR_NVKE_E2E_TENANT: '1'
         run: |
           set -euo pipefail
+          timeout --kill-after=10s 180s go test ./internal/nvkedemo -list '^TestEndToEnd$' | grep -Fx TestEndToEnd
           remaining=$(( NVKR_JOB_DEADLINE - $(date +%s) ))
           # TestEndToEnd reserves two hours inside this deadline for owned cleanup.
           (( remaining > 125 * 60 ))

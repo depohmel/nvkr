@@ -1,11 +1,13 @@
 # Nightly NVKR builds and NVKE end-to-end tests
 
 The authored [workflow](../.github/workflows/nvkr-nightly.yml) runs daily at
-03:17 UTC and supports ordinary manual branch dispatch. One `ubuntu-24.04`
+03:17 UTC in `dsx-ai-factory/nvkr` and supports ordinary manual branch dispatch.
+Forks can dispatch their branches manually; their scheduled jobs are skipped. One `ubuntu-24.04`
 GitHub-hosted AMD64 job builds and tests together. It uses no NVIDIA runner,
 protected environment, repository secret, signing permission or registry writer.
 It uploads no Actions artifacts or caches. Binaries, OCI images, QCOW2 files and
-raw diagnostics stay on the disposable runner's local disk.
+private diagnostic files stay on the disposable runner's local disk. Stderr, build
+output and bounded host/kernel/cgroup samples enter the public job log.
 
 The job checks out the dispatched NVKR commit and resolves NVKE `main` once.
 It passes that exact NVKE commit to NVKR's existing `TestEndToEnd` Go test.
@@ -74,6 +76,7 @@ does not prove this native NVKR topology or its cleanup. That experiment also
 encountered severe disk pressure. A completed run of this exact workflow is
 required before claiming hosted acceptance.
 
-The generated ARM64 publishing workflows and `TestNightlyPublishedCandidate`
-retain their separate artifact-consumer diagnostic scope. This local hosted
+The ARM64 build/publish/consume nightly cycle is retired. Generated ARM64 producer
+workflows remain, but no nightly invokes them or `TestNightlyPublishedCandidate`.
+The legacy script and consumer remain uninvoked pending removal. This local hosted
 nightly grants no qualified release or publication acceptance.

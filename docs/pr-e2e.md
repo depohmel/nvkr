@@ -43,7 +43,8 @@ gh workflow run nvkr-nightly.yml \
 
 Or, in **your fork's Actions tab**, select **NVKR nightly NVKE end-to-end tests →
 Run workflow**, choose **your PR branch** in the branch dropdown, then click
-**Run workflow**. No workflow inputs are required.
+**Run workflow**. No workflow inputs are required. Forks support manual dispatch;
+scheduled jobs run only in `dsx-ai-factory/nvkr`.
 
 The selected branch supplies both the workflow and NVKR code. Select the same
 branch your PR uses; the run starts when you dispatch it.

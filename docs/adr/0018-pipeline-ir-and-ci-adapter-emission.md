@@ -269,8 +269,7 @@ Repository checks disable compiled-output caches and CodeQL database/TRAP/overla
 mode is rejected before CodeQL initialization because it enables extra diagnostic uploads. The authored OS
 validation workflow retains private post-build files only when the selected candidate equals its exact
 trusted workflow commit. Arbitrary candidate execution receives no later storage credential and retains no
-file artifacts; trusted selection summaries and runner logs remain diagnostic. The nightly coordinator
-attaches only its constructed cycle summary, never unvalidated raw suite report files. These limits are not SLSA
+file artifacts; trusted selection summaries and runner logs remain diagnostic. These limits are not SLSA
 Build L3 or qualified execution claims.
 
 The explicit diagnostic `validate` route is separate from generated producer execution. Published-source
@@ -525,9 +524,11 @@ checks site readiness and tenant workload/DNS, and joins owned cleanup.
 This workflow uses ordinary branch `workflow_dispatch` and retains its daily
 trigger. It has no promotion/lock refs, NVIDIA runner or protected environment,
 repository secrets, publication/signing permission, Actions artifact upload or
-shared cache. Product bytes and raw diagnostics stay on the disposable host.
-Generated ARM64 publishing workflows and the authenticated published-artifact
-consumer remain separate diagnostics; their ARC admission policies are unchanged.
+shared cache. Product bytes and private diagnostic files stay on the disposable
+host; stderr, build output and bounded host/kernel/cgroup samples enter the public
+job log. The ARM64 build/publish/consume nightly cycle is retired. Generated ARM64
+producer workflows remain available under their existing ARC admission policies,
+but no nightly invokes them or the legacy published-artifact consumer.
 
 KVM and observed capacity are prerequisites. The six-hour job passes its remaining
 deadline to Go, which preserves two hours for independent cleanup. The explicit
@@ -1325,7 +1326,7 @@ policy without requiring current source pins in the committed baseline. Ordinary
 byte-exact, including after bootstrap restoration. Default and development generation remain unchanged.
 
 An optional `githubRuntimeSource` policy names one canonical GitHub repository and
-`refs/heads/main` for the coordinator's selection. The coordinator resolves that ref once;
+`refs/heads/main` for the workflow caller's selection. That caller resolves the ref once;
 the generated producer requires its full commit as dispatch input. The catalog owner
 fetches the configured main ref and admits only equality or Git-proven ancestry of the
 selected commit, allowing main to advance between selection and replay. Equality uses

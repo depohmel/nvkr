@@ -324,6 +324,7 @@ func TestLocalNVKESourceRejectsIncompatibleBuildsBeforeWork(t *testing.T) {
 		valid          bool
 	}{
 		{"defaultAMD64", "linux/amd64", func(*BuildConfig) {}, true},
+		{"explicit ovn", "linux/amd64", func(c *BuildConfig) { c.Network = "ovn" }, true},
 		{"other architecture", "linux/arm64", func(*BuildConfig) {}, false},
 		{"Mac", "darwin/arm64", func(*BuildConfig) {}, false},
 		{"prepared", "linux/amd64", func(c *BuildConfig) { c.Prepared = true }, false},
