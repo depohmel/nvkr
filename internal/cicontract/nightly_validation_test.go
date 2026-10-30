@@ -41,15 +41,17 @@ if [[ ${1:-} == run && ${2:-} == download ]]; then
   exit 0
 fi
 [[ ${1:-} == api ]]
-method=GET endpoint='' input=''
+method=GET endpoint='' input='' api_version=false
 while [[ $# -gt 0 ]]; do
   case $1 in
     --method) method=$2; shift ;;
     --input) input=$2; shift ;;
+    'X-GitHub-Api-Version: 2026-03-10') api_version=true ;;
     repos/*|graphql) endpoint=$1 ;;
   esac
   shift
 done
+[[ $api_version == true ]]
 printf '%s %s\n' "$method" "$endpoint" >>"$FAKE_GH_ROOT/calls"
 case "$method $endpoint" in
   'GET repos/dsx-ai-factory/nvkr') cat "$FAKE_GH_ROOT/repository.json" ;;
@@ -104,6 +106,8 @@ case "$method $endpoint" in
   'GET repos/dsx-ai-factory/nvkr/git/ref/heads/nvkr-validation')
     jq -e '.[] | select(.ref == "refs/heads/nvkr-validation")' "$FAKE_GH_ROOT/refs.json" ;;
   'POST repos/dsx-ai-factory/nvkr/actions/workflows/nvkr-nightly.yml/dispatches')
+    # This API version always returns run details; return_run_details was removed.
+    jq -e 'keys == ["inputs","ref"]' "$input" >/dev/null
     cp "$input" "$FAKE_GH_ROOT/dispatched.json"
     [[ ${FAKE_DISPATCH_FAILURE:-false} != true ]] || exit 17
     cat "$FAKE_GH_ROOT/dispatch.json" ;;
@@ -253,6 +257,43 @@ func TestNightlyValidationPromotesAndTestsOnlyApprovedCandidate(t *testing.T) {
 		if checks != 2 {
 			t.Fatalf("main nightly %s checked %d times, want before and after promotion", state, checks)
 		}
+	}
+}
+
+func TestNightlyValidationBindsExactBranchQualifiedCoordinatorPath(t *testing.T) {
+	for _, scenario := range []string{"exact qualified path", "wrong branch qualifier", "wrong workflow qualifier", "qualified path with wrong commit"} {
+		t.Run(scenario, func(t *testing.T) {
+			f := newValidationFixture(t)
+			raw, err := os.ReadFile(filepath.Join(f.root, "coordinator.json"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			var coordinator map[string]any
+			if err := json.Unmarshal(raw, &coordinator); err != nil {
+				t.Fatal(err)
+			}
+			coordinator["path"] = ".github/workflows/nvkr-nightly.yml@nvkr-validation"
+			switch scenario {
+			case "wrong branch qualifier":
+				coordinator["path"] = ".github/workflows/nvkr-nightly.yml@main"
+			case "wrong workflow qualifier":
+				coordinator["path"] = ".github/workflows/other.yml@nvkr-validation"
+			case "qualified path with wrong commit":
+				coordinator["head_sha"] = strings.Repeat("b", 40)
+			}
+			fixtureJSON(t, filepath.Join(f.root, "coordinator.json"), coordinator)
+			output, status := runValidation(t, f, "--approve")
+			if scenario == "exact qualified path" {
+				if status != 0 {
+					t.Fatalf("exact branch-qualified coordinator rejected: %d\n%s", status, output)
+				}
+				return
+			}
+			assertValidationFailure(t, output, status, 49)
+			if len(validationRefUpdates(t, f)) != 1 || !strings.Contains(output, "lock retained after incomplete validation") {
+				t.Fatal("invalid coordinator path released its lease", output)
+			}
+		})
 	}
 }
 

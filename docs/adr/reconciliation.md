@@ -2011,10 +2011,17 @@ unreviewed renames, unsafe metadata, exact path/version
 checks and unchanged external selections; they do not establish installation or fresh runtime acceptance.
 The native runtime-image variant
 keeps its separately authenticated images and binds their selection to the same NVKE
-source. Mac and Linux tools share the same NVKE source pins. Maintained release,
-native demo and nightly product-build selections use this release; the independently
-pinned nightly test harnesses retain their separate source exception. Selection grants
-no Release authority; prior failed Runs remain failed.
+source. Mac and Linux tools share the same NVKE source pins. Maintained release
+and native demo selections use this release baseline. Nightly runtime-source
+selection instead binds source-built products to the cycle's exact NVKE main
+commit. Its ARM64 NVIDIA disk additionally uses the
+`current-main-doca-ovs.json` image-inputs overlay, authored at
+`82c8b7e8a3d4fa0ca301cb8eead4a6abea043755` and rebound to that same cycle commit.
+The source-owned locked DOCA package acquisition runs before offline image
+composition; this exception does not change the release or local-demo selections.
+The native consumer's matching AMD64/ARM64 profile, Plan disk and host admission
+is contract-tested, not evidence of an AMD64 hosted nightly. Selection grants no
+Release authority; prior failed Runs remain failed.
 
 The private Ubuntu attempt `ubuntu-9905-e2e-02` used consumer
 `990519c1a53335390ce9464c3eee3d8135076b51`, this stock NVKE source and NVIDIA
@@ -3581,6 +3588,11 @@ group. The operator checks main-coordinator nonterminal states before and after
 promotion; an observed race retains the lease without dispatch. Default pending
 queue replacement is reported as exact-run failure, not treated as successful
 runtime execution or a FIFO guarantee.
+Candidate ref protections and deployment policies do not restrict who may enqueue
+workflow dispatches. Workflow actor restrictions remain a separate provider-policy
+decision that must preserve authorized main execution; no actor allowlist is
+configured or claimed. Other writers can therefore displace a pending validation,
+which fails and retains its lease rather than accepting a replacement run.
 
 The archive correction selects source-built tarball assets in executable bundles
 through exact resolved-component and producer/output membership. Helm and disk

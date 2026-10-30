@@ -71,6 +71,15 @@ native runtime slot concurrently. Other main-branch workflows do not block this
 admission. GitHub's default single-pending queue can replace a queued invocation;
 there is no FIFO guarantee. Such cancellation fails the exact validation and
 retains its lease for explicit recovery rather than accepting another run.
+Ref-write restrictions protect candidate code, not workflow-dispatch access.
+Another repository writer can still dispatch this workflow and displace a pending
+run before any job guard or environment approval executes. Restricting candidate
+dispatch alone would not prevent main dispatches from sharing that queue.
+[GitHub workflow execution policies](https://docs.github.com/en/actions/how-tos/administer/control-workflow-execution)
+can restrict actors for a workflow. Selecting that actor policy and preserving
+authorized main manual and scheduled execution are a separate administrator-owned
+decision; this implementation does not configure such a policy or invent an actor
+allowlist. Pending-run availability therefore remains a documented limitation.
 The persistent lock's idle value is the existing Git checkpoint
 `e74161ab5b41b89e0f4a6e9dce790664059a6d47`. That value is only a concurrency
 marker; it grants no artifact or release authority. Any other value holds the

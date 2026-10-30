@@ -247,6 +247,46 @@ func nightlyAPIRun(profile NightlyProfile, build NightlyBuild) nightlyGitHubRun 
 	return run
 }
 
+func TestNightlyGitHubRunBindsBothProviderPathFormsToExactBranch(t *testing.T) {
+	for _, branch := range []string{"main", nightlyCandidateBranch} {
+		profile, build := nightlyIdentityFixture()
+		build.SourceBranch = branch
+		path := ".github/workflows/" + profile.BuildWorkflow
+		otherBranch := nightlyCandidateBranch
+		if branch == nightlyCandidateBranch {
+			otherBranch = "main"
+		}
+		for _, test := range []struct {
+			name, path string
+			wrongSHA   bool
+			valid      bool
+		}{
+			{"bare", path, false, true},
+			{"qualified", path + "@" + branch, false, true},
+			{"other admitted branch", path + "@" + otherBranch, false, false},
+			{"wrong workflow", ".github/workflows/other.yml@" + branch, false, false},
+			{"wrong SHA", path + "@" + branch, true, false},
+			{"extra qualifier", path + "@" + branch + "@" + branch, false, false},
+		} {
+			t.Run(branch+"/"+test.name, func(t *testing.T) {
+				run := nightlyAPIRun(profile, build)
+				run.Path = test.path
+				if test.wrongSHA {
+					run.HeadSHA = strings.Repeat("c", 40)
+				}
+				err := validateNightlyGitHubRun(run, profile, build, "example/nvkr", 123)
+				if test.valid {
+					if err != nil {
+						t.Fatal(err)
+					}
+					return
+				}
+				assertNightlyCode(t, err, e.CodeUnpinnedInput)
+			})
+		}
+	}
+}
+
 func nightlyAPIArtifact(name string, build NightlyBuild) nightlyGitHubArtifact {
 	expired := false
 	artifact := nightlyGitHubArtifact{ID: 300, Name: name, Size: 100, Digest: pipeline.FileDigest([]byte(name)), Expired: &expired}

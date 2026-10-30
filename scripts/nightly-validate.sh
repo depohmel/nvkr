@@ -197,7 +197,7 @@ while (( SECONDS < deadline )); do
     (.id|tostring) == $run and .head_sha == $sha and .head_branch == $branch and
     .repository.full_name == $repo and .repository.id == 1363007688 and
     .head_repository.id == 1363007688 and .head_repository.full_name == $repo and .event == "workflow_dispatch" and
-    .path == ".github/workflows/nvkr-nightly.yml" and .run_attempt == 1
+    (.path == ".github/workflows/nvkr-nightly.yml" or .path == (".github/workflows/nvkr-nightly.yml@" + $branch)) and .run_attempt == 1
   ' "$out/coordinator.json" >/dev/null || fail NVKR-E-UNPINNED-INPUT 'coordinator differs from approved exact candidate'
   if [[ $(jq -er '.status' "$out/coordinator.json") == completed ]]; then
     terminal=true

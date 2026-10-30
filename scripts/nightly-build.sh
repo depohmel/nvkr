@@ -98,7 +98,8 @@ while (( SECONDS < deadline )); do
   jq -e --arg id "$run_id" --arg sha "$GITHUB_SHA" --arg repo "$GITHUB_REPOSITORY" \
     --arg path ".github/workflows/$workflow" --arg branch "$branch" \
     '(.id|tostring) == $id and .head_sha == $sha and .head_branch == $branch and
-     .event == "workflow_dispatch" and .path == $path and .repository.full_name == $repo and .run_attempt == 1' \
+     .event == "workflow_dispatch" and (.path == $path or .path == ($path + "@" + $branch)) and
+     .repository.full_name == $repo and .run_attempt == 1' \
     "$out/producer-run.json" >/dev/null ||
     fail NVKR-E-UNPINNED-INPUT 'producer identity, commit, workflow or attempt differs from the nightly cycle' 49
   if [[ $(jq -er '.status' "$out/producer-run.json") == completed ]]; then

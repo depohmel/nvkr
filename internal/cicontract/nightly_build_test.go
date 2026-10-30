@@ -29,12 +29,16 @@ const nightlyWorkflow = "nvkr-run-oss.yml"
 // endpoint, and serves a child ID distinct from the coordinator's ID.
 const fakeGitHub = `#!/usr/bin/env bash
 set -euo pipefail
-method=GET endpoint='' next_method=false
+method=GET endpoint='' input='' next_method=false next_input=false api_version=false
 for argument in "$@"; do
   if [[ $next_method == true ]]; then method=$argument; next_method=false; fi
+  if [[ $next_input == true ]]; then input=$argument; next_input=false; fi
   if [[ $argument == --method ]]; then next_method=true; fi
+  if [[ $argument == --input ]]; then next_input=true; fi
+  if [[ $argument == 'X-GitHub-Api-Version: 2026-03-10' ]]; then api_version=true; fi
   if [[ $argument == repos/* ]]; then endpoint=$argument; fi
 done
+[[ $api_version == true ]]
 printf '%s %s\n' "$method" "$endpoint" >>"$FAKE_GH_ROOT/calls"
 block_request() {
   trap '' INT TERM
@@ -49,6 +53,8 @@ case "$method $endpoint" in
   'GET repos/example/nvkr') cat "$FAKE_GH_ROOT/repository.json" ;;
   'GET repos/example/nvkr/actions/workflows/nvkr-run-oss.yml') cat "$FAKE_GH_ROOT/workflow.json" ;;
   'POST repos/example/nvkr/actions/workflows/nvkr-run-oss.yml/dispatches')
+    # This API version always returns run details; return_run_details was removed.
+    jq -e 'keys == ["inputs","ref"]' "$input" >/dev/null
     if [[ ${FAKE_GH_BLOCK:-} == dispatch ]]; then block_request; fi
     if [[ $FAKE_DISPATCH_FAILURE == true ]]; then exit 17; fi
     cat "$FAKE_GH_ROOT/dispatch.json" ;;
@@ -260,6 +266,44 @@ func TestNightlyBuildRecordsOnlyExactSuccessfulProducer(t *testing.T) {
 	data, err = os.ReadFile(filepath.Join(f.out, "request.json"))
 	if err != nil || json.Unmarshal(data, &request) != nil || request.Ref != "main" || request.Inputs.SourceCommit != nightlyNVKESHA {
 		t.Fatalf("unexpected dispatch request: %s (%v)", data, err)
+	}
+}
+
+func TestNightlyBuildBindsExactBranchQualifiedWorkflowPath(t *testing.T) {
+	for _, branch := range []string{"main", "nvkr-validation"} {
+		for _, scenario := range []string{"exact qualified path", "wrong branch qualifier", "wrong workflow qualifier", "qualified path with wrong commit"} {
+			t.Run(branch+"/"+scenario, func(t *testing.T) {
+				f := newNightlyFixture(t)
+				f.setEnv("GITHUB_REF", "refs/heads/"+branch)
+				if branch == "nvkr-validation" {
+					f.setEnv("NVKR_CANDIDATE_SHA", nightlySHA)
+				}
+				f.producer["head_branch"] = branch
+				f.producer["path"] = ".github/workflows/" + nightlyWorkflow + "@" + branch
+				switch scenario {
+				case "wrong branch qualifier":
+					f.producer["path"] = ".github/workflows/" + nightlyWorkflow + "@main"
+					if branch == "main" {
+						f.producer["path"] = ".github/workflows/" + nightlyWorkflow + "@nvkr-validation"
+					}
+				case "wrong workflow qualifier":
+					f.producer["path"] = ".github/workflows/other.yml@" + branch
+				case "qualified path with wrong commit":
+					f.producer["head_sha"] = strings.Repeat("b", 40)
+				}
+				output, status := f.run(t, "oss")
+				if scenario == "exact qualified path" {
+					if status != 0 {
+						t.Fatalf("exact branch-qualified producer rejected: %d\n%s", status, output)
+					}
+					return
+				}
+				if status != 49 || !strings.Contains(output, "NVKR-E-UNPINNED-INPUT") {
+					t.Fatalf("substituted qualified producer accepted: %d\n%s", status, output)
+				}
+				noBuildResult(t, f)
+			})
+		}
 	}
 }
 

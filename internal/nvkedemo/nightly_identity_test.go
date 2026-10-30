@@ -286,7 +286,8 @@ func validateNightlyGitHubRun(run nightlyGitHubRun, profile NightlyProfile, buil
 	if err != nil {
 		return err
 	}
-	if run.ID != build.ProducerRun || run.RunAttempt != build.ProducerAttempt || run.HeadSHA != build.SourceCommit || run.HeadBranch != branch || run.Event != "workflow_dispatch" || run.Path != ".github/workflows/"+profile.BuildWorkflow || run.Status != "completed" || run.Conclusion != "success" || run.HTMLURL != build.ProducerURL || run.Repository.ID != repositoryID || run.Repository.FullName != repository || run.HeadRepository.ID != repositoryID || run.HeadRepository.FullName != repository {
+	workflowPath := ".github/workflows/" + profile.BuildWorkflow
+	if run.ID != build.ProducerRun || run.RunAttempt != build.ProducerAttempt || run.HeadSHA != build.SourceCommit || run.HeadBranch != branch || run.Event != "workflow_dispatch" || (run.Path != workflowPath && run.Path != workflowPath+"@"+branch) || run.Status != "completed" || run.Conclusion != "success" || run.HTMLURL != build.ProducerURL || run.Repository.ID != repositoryID || run.Repository.FullName != repository || run.HeadRepository.ID != repositoryID || run.HeadRepository.FullName != repository {
 		return e.New(e.CodeUnpinnedInput, "current GitHub producer run differs from exact successful cycle")
 	}
 	return nil
