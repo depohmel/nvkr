@@ -37,6 +37,16 @@ The six-hour job has bounded setup steps and passes its remaining deadline to
 Go. `TestEndToEnd` reserves two hours inside that deadline for independent owned
 cleanup. Setup refuses a non-hosted/non-AMD64 host or missing KVM.
 
+Hosted setup uses a persistent udev rule granting the current runner UID ownership
+and the `kvm` group access with mode `0660`. It validates the rule, reloads it,
+triggers device policy, waits for completion and checks an unprivileged read/write
+open. This adapts [GitHub's documented KVM setup](https://github.blog/changelog/2023-02-22-hardware-accelerated-android-virtualization-on-actions-windows-and-linux-larger-hosted-runners/)
+without granting world-write access. Setup and final diagnostics record identity,
+device ownership/mode/inode and ACLs. [Run 41132205486](https://github.com/dsx-ai-factory/nvkr/actions/runs/41132205486)
+completed the QCOW2 build, then failed the host-user KVM open before site launch
+despite its earlier one-time ACL grant. Its log does not identify the event that
+changed access; the persistent policy still requires full E2E validation.
+
 The Go test prints phase start/end/failure and child process start/exit
 observations. Once a minute, a parent-test heartbeat reports the last started
 phase, its age and how long the public child stream has been idle. That heartbeat

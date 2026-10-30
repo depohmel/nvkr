@@ -87,7 +87,18 @@ jobs:
             libvirt-daemon-system libvirt-clients qemu-utils qemu-system-x86 ovmf \
             cloud-image-utils swtpm swtpm-tools gnutls-bin ipxe-qemu \
             dnsmasq-base iptables iproute2 libcap2-bin e2fsprogs kmod time
-          sudo -n setfacl -m "u:$(id -un):rw" /dev/kvm
+          # Persist this disposable runner's grant when udev reapplies device policy.
+          id
+          stat -c 'KVM before: uid=%u gid=%g mode=%a inode=%i device=%t:%T' /dev/kvm
+          getfacl -cp /dev/kvm
+          printf 'KERNEL=="kvm", OWNER="%s", GROUP="kvm", MODE="0660", OPTIONS+="static_node=kvm"\n' "$(id -u)" | \
+            sudo -n timeout --kill-after=5s 15s tee /etc/udev/rules.d/99-nvkr-kvm.rules
+          sudo -n timeout --kill-after=5s 15s udevadm verify /etc/udev/rules.d/99-nvkr-kvm.rules
+          sudo -n timeout --kill-after=5s 15s udevadm control --reload-rules
+          sudo -n timeout --kill-after=5s 30s udevadm trigger --name-match=kvm
+          sudo -n timeout --kill-after=5s 30s udevadm settle --timeout=25
+          stat -c 'KVM ready: uid=%u gid=%g mode=%a inode=%i device=%t:%T' /dev/kvm
+          getfacl -cp /dev/kvm
           (exec 3<>/dev/kvm)
           sudo -n -k timeout --signal=TERM --kill-after=5s 25s true
           docker info --format '{{.OSType}}/{{.Architecture}}'
@@ -152,3 +163,6 @@ jobs:
         run: |
           free -m
           df -Pm "$RUNNER_TEMP"
+          timeout --kill-after=2s 10s id || true
+          timeout --kill-after=2s 10s stat -c 'KVM final: uid=%u gid=%g mode=%a inode=%i device=%t:%T' /dev/kvm || true
+          timeout --kill-after=2s 10s getfacl -cp /dev/kvm || true

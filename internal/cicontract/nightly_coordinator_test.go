@@ -61,11 +61,23 @@ func TestNightlyUsesOnlyHostedBuildAndGoE2E(t *testing.T) {
 		if job.If != "github.event_name != 'schedule' || github.repository == 'dsx-ai-factory/nvkr'" {
 			t.Fatal("nightly schedules must run only upstream while forks retain manual dispatch")
 		}
-		built, tenant, source, host, deadline := false, false, false, false, false
+		built, tenant, source, host, deadline, kvm := false, false, false, false, false, false
 		nvkrCheckouts := 0
 		for _, step := range job.Steps {
 			host = host || strings.Contains(step.Run, `test "$RUNNER_ENVIRONMENT" = github-hosted`)
 			source = source || strings.Contains(step.Run, "NVKR_NVKE_E2E_SOURCE_COMMIT=")
+			if strings.Contains(step.Run, "99-nvkr-kvm.rules") {
+				kvm = true
+				for _, required := range []string{
+					`KERNEL=="kvm", OWNER="%s", GROUP="kvm", MODE="0660"`, `"$(id -u)"`,
+					"udevadm verify /etc/udev/rules.d/99-nvkr-kvm.rules", "udevadm control --reload-rules",
+					"udevadm trigger --name-match=kvm", "udevadm settle --timeout=25", "(exec 3<>/dev/kvm)",
+				} {
+					if !strings.Contains(step.Run, required) {
+						t.Fatalf("nightly must retain persistent runner-scoped KVM access and an unprivileged probe: missing %q", required)
+					}
+				}
+			}
 			// The authored arithmetic leaves ten minutes before the job's hard
 			// deadline; Go reserves independent cleanup time inside that deadline.
 			deadline = deadline || (strings.Contains(step.Run, "NVKR_JOB_DEADLINE=%s") && strings.Contains(step.Run, fmt.Sprintf("+ %d * 60 ))", job.TimeoutMinutes-10)))
@@ -101,11 +113,11 @@ func TestNightlyUsesOnlyHostedBuildAndGoE2E(t *testing.T) {
 				t.Fatal("nightly must not enable Buildx binary caching")
 			}
 		}
-		if !built || !tenant || !source || !host || !deadline || nvkrCheckouts != 1 {
+		if !built || !tenant || !source || !host || !deadline || !kvm || nvkrCheckouts != 1 {
 			t.Fatal("nightly must build the frozen main source and run the native site/tenant Go E2E on an admitted hosted runner")
 		}
 	}
-	for _, forbidden := range []string{"secrets.", "actions/upload-artifact@", "actions/cache@", "nightly-validate.sh", "nvkr-validation", "updateRefs", "docker push", "oras push"} {
+	for _, forbidden := range []string{"secrets.", "actions/upload-artifact@", "actions/cache@", "nightly-validate.sh", "nvkr-validation", "updateRefs", "docker push", "oras push", `MODE="0666"`, "chmod 0666 /dev/kvm"} {
 		if strings.Contains(string(raw), forbidden) {
 			t.Fatalf("nightly introduces credentials, distribution or ref mutation through %q", forbidden)
 		}
