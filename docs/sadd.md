@@ -647,8 +647,11 @@ direct dependency context retain the original lists.
 Large finalizers receive exact original job results through fixed, bounded collectors. A collector must
 succeed and report its complete Plan-derived membership before recovery; its aggregate status never replaces
 individual producer outcomes. Opt-in execution partitioning groups dependency layers into same-commit callable
-workers, with original job IDs and per-job controls. OIDC-signing jobs stay in the entry workflow to preserve
-the authored signer identity policy. Partitions may delay independent work behind an earlier
+workers, with original job IDs and per-job controls; declared job timeouts split a layer so short work
+need not wait for long siblings. OIDC-signing jobs stay in the entry workflow to preserve
+the authored signer identity policy. Generation refuses OIDC in workers, and relocating signers remains a
+proposed identity and trust-policy migration (ADR-18 §8). Workers export per-consumer result fragments, so the
+entry does not repeat member projections. Partitions may delay independent work behind an earlier
 group, but original prerequisite results govern ordinary job admission. One complete Plan and one finalizer
 retain the Run and Release boundary. Exact regeneration admits every worker and caller connection under the
 same ownership manifest. Factory's provider-independent execution graph owns operation membership,

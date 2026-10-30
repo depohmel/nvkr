@@ -11,15 +11,7 @@ name: NVKR nightly NVKE end-to-end tests
       tenant_checks:
         description: Also create a tenant and check workload and DNS after site bootstrap
         type: boolean
-        default: true
-      candidate_sha:
-        description: Approved exact NVKR commit; required only on nvkr-validation
-        type: string
-        default: ''
-      candidate_pr:
-        description: Current open PR whose approved commit is being validated
-        type: string
-        default: ''
+        default: false
       profile:
         description: Maintained nightly project to build and test
         type: choice
@@ -33,18 +25,14 @@ permissions:
   contents: read
 
 concurrency:
-  # Match the deployed main workflow so candidates serialize even before merge.
   group: nvkr-nightly-main
   cancel-in-progress: false
 
 jobs:
   select:
-    if: github.repository == 'dsx-ai-factory/nvkr' && (github.ref == 'refs/heads/main' || (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/nvkr-validation'))
+    if: github.repository == 'dsx-ai-factory/nvkr' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-24.04
     timeout-minutes: 10
-    permissions:
-      contents: read
-      pull-requests: read
     outputs:
       matrix: ${{ steps.profiles.outputs.matrix }}
       nvke_commit: ${{ steps.source.outputs.nvke_commit }}
@@ -54,28 +42,6 @@ jobs:
         with:
           ref: ${{ github.sha }}
           persist-credentials: false
-      - name: Bind validation to the approved current PR commit
-        env:
-          GH_TOKEN: ${{ github.token }}
-          CANDIDATE_SHA: ${{ inputs.candidate_sha }}
-          CANDIDATE_PR: ${{ inputs.candidate_pr }}
-        run: |
-          set -euo pipefail
-          reject() { echo 'nvkr: [NVKR-E-UNPINNED-INPUT] candidate must match its approved current PR and mirror' >&2; exit 49; }
-          if [[ "$GITHUB_REF" == refs/heads/main ]]; then
-            [[ -z "$CANDIDATE_SHA" && -z "$CANDIDATE_PR" ]] || reject
-            exit 0
-          fi
-          [[ "$GITHUB_REF" == refs/heads/nvkr-validation && "$CANDIDATE_SHA" == "$GITHUB_SHA" &&
-            "$CANDIDATE_SHA" =~ ^[0-9a-f]{40}$ && "$CANDIDATE_PR" =~ ^[1-9][0-9]*$ ]] || reject
-          pr=$(timeout --kill-after=5s 60s gh api --hostname github.com "repos/$GITHUB_REPOSITORY/pulls/$CANDIDATE_PR") || reject
-          jq -e --arg sha "$CANDIDATE_SHA" --arg repo "$GITHUB_REPOSITORY" '
-            .head.sha == $sha and .state == "open" and .draft == false and
-            .base.ref == "main" and .base.repo.full_name == $repo
-          ' <<<"$pr" >/dev/null || reject
-          mirror=$(timeout --kill-after=5s 60s gh api --hostname github.com \
-            "repos/$GITHUB_REPOSITORY/git/ref/heads/pull-request/$CANDIDATE_PR") || reject
-          jq -e --arg sha "$CANDIDATE_SHA" '.object.type == "commit" and .object.sha == $sha' <<<"$mirror" >/dev/null || reject
       - name: Select maintained nightly projects
         id: profiles
         env:
@@ -143,7 +109,6 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           PROFILE: ${{ matrix.name }}
           NVKE_COMMIT: ${{ needs.select.outputs.nvke_commit }}
-          NVKR_CANDIDATE_SHA: ${{ inputs.candidate_sha }}
         run: |
           set -euo pipefail
           bash scripts/nightly-build.sh inputs/testing/nightly-profiles.json "$PROFILE" \
@@ -322,7 +287,7 @@ jobs:
           NVKR_NIGHTLY_PROFILE: ${{ matrix.name }}
           NVKR_NIGHTLY_PROFILES: ${{ github.workspace }}/inputs/testing/nightly-profiles.json
           NVKR_NIGHTLY_BUILD: ${{ github.workspace }}/.nightly-private/build/build.json
-          NVKR_NIGHTLY_TENANT: ${{ (github.ref == 'refs/heads/nvkr-validation' || github.event_name == 'schedule' || inputs.tenant_checks) && '1' || '0' }}
+          NVKR_NIGHTLY_TENANT: ${{ inputs.tenant_checks && '1' || '0' }}
           NVKR_NIGHTLY_NETWORK_HELPER: ${{ github.workspace }}/bin/nvke-demo
           NVKR_NIGHTLY_WORKSPACE: ${{ runner.temp }}/nightly-candidate-${{ matrix.name }}
           NVKR_NIGHTLY_REPORTS: ${{ runner.temp }}/nightly-reports-${{ matrix.name }}
@@ -338,8 +303,7 @@ jobs:
             --arg attempt "$GITHUB_RUN_ATTEMPT" --arg sha "$GITHUB_SHA" '
             .profile == $profile and .phase == "runtime" and .runtimePassed == true and
             .coordinatorRun == $run and .coordinatorAttempt == $attempt and
-            .sourceCommit == $sha and .qualificationAuthority == "none" and
-            (env.NVKR_NIGHTLY_TENANT != "1" or .tenantChecksPassed == true)
+            .sourceCommit == $sha and .qualificationAuthority == "none"
           ' "$NVKR_NIGHTLY_REPORTS/cycle.json" >/dev/null
       - name: Preserve the public runtime verdict
         if: always()

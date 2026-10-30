@@ -252,7 +252,7 @@ func testNightlyRuntimePlanHandoff(t *testing.T, sourcePolicy bool) {
 			if err := os.Chmod(workspace, 0o700); err != nil {
 				t.Fatal(err)
 			}
-			inputs, err := newNightlyInputsWithCapture(t.Context(), profile, locator, baseline, trustedDefinition, trustedEnvironment, workspace, "example/nvkr", "123", build.SourceCommit, "100", "2", "refs/heads/main", capture)
+			inputs, err := newNightlyInputsWithCapture(t.Context(), profile, locator, baseline, trustedDefinition, trustedEnvironment, workspace, "example/nvkr", "123", build.SourceCommit, "100", "2", capture)
 			if scenario == "fresh" || scenario == "current trusted Definition" {
 				if err != nil || inputs == nil || inputs.Plan == baseline || inputs.Run.PlanDigest != expectedDigest || inputs.HarnessCommit != strings.Repeat("d", 40) {
 					t.Fatalf("fresh frozen Plan not consumed: %+v, %v", inputs, err)

@@ -556,33 +556,19 @@ func TestBuiltInputsShareCombinedRun(t *testing.T) {
 
 func TestBuildAttemptDiagnostics(t *testing.T) {
 	t.Setenv("GIT_CONFIG_COUNT", "0")
-	if runtime.GOOS != "linux" || (runtime.GOARCH != "arm64" && runtime.GOARCH != "amd64") {
-		t.Skip("artifact build admission requires supported native Linux")
-	}
-	definition, environment, err := LocalArtifactInputsForPlatform("", false, runtime.GOOS+"/"+runtime.GOARCH)
-	if err != nil {
-		t.Fatal(err)
-	}
-	inputs := make(map[string][]byte)
-	for _, path := range []string{definition, environment} {
-		raw, err := os.ReadFile(filepath.Join("../..", path))
-		if err != nil {
-			t.Fatal(err)
-		}
-		inputs[path] = raw
+	if runtime.GOOS != "linux" || runtime.GOARCH != "arm64" {
+		t.Skip("artifact build admission requires native Linux ARM64")
 	}
 	for _, root := range []string{"runs", "laptop-bootstrap", "native-tools/runs"} {
 		for _, blockedParent := range []bool{false, true} {
 			t.Run(root+map[bool]string{false: "/existing", true: "/not-directory"}[blockedParent], func(t *testing.T) {
 				repo := privateTestDir(t)
-				for path, raw := range inputs {
-					destination := filepath.Join(repo, path)
-					if err := os.MkdirAll(filepath.Dir(destination), 0700); err != nil {
-						t.Fatal(err)
-					}
-					writeTenantFixture(t, destination, raw, 0600)
+				if err := os.Mkdir(filepath.Join(repo, "scripts"), 0700); err != nil {
+					t.Fatal(err)
 				}
-				writeTenantFixture(t, filepath.Join(repo, "nvkr"), []byte("#!/bin/sh\nexit 99\n"), 0700)
+				if err := os.WriteFile(filepath.Join(repo, "scripts/nvke-full-arm64-local.sh"), []byte("#!/bin/sh\nexit 99\n"), 0700); err != nil {
+					t.Fatal(err)
+				}
 				parent := filepath.Join(repo, ".nvkr", root)
 				if err := os.MkdirAll(filepath.Dir(parent), 0700); err != nil {
 					t.Fatal(err)
@@ -597,7 +583,7 @@ func TestBuildAttemptDiagnostics(t *testing.T) {
 				if err := os.WriteFile(keep, []byte("original"), 0600); err != nil {
 					t.Fatal(err)
 				}
-				result, err := BuildArtifacts(t.Context(), BuildConfig{Repository: repo, DemoExecutable: filepath.Join(repo, "nvke-demo"), AttemptPrefix: "retained", Jobs: 2})
+				result, err := BuildArtifacts(t.Context(), BuildConfig{Repository: repo, AttemptPrefix: "retained", Jobs: 2})
 				var coded *nvkrerr.Error
 				if result != (BuiltInputs{}) || !errors.As(err, &coded) || coded.Code != nvkrerr.CodeBuildFailed || !strings.Contains(err.Error(), owned) {
 					t.Fatalf("result=%+v error=%v", result, err)

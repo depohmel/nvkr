@@ -10,7 +10,6 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
-	"regexp"
 	"runtime"
 	"syscall"
 	"testing"
@@ -97,8 +96,8 @@ func nightlyTestAdmission(enable, actions, profile string) (bool, error) {
 }
 
 func runNightlyPublishedCandidate(ctx context.Context, timing nightlyTiming) (resultErr error) {
-	if runtime.GOOS != "linux" || os.Getenv("GITHUB_SERVER_URL") != "https://github.com" {
-		return e.New(e.CodeEngineCapability, "nightly runtime requires the protected GitHub workflow on native Linux")
+	if runtime.GOOS != "linux" || os.Getenv("GITHUB_REF") != "refs/heads/main" || os.Getenv("GITHUB_SERVER_URL") != "https://github.com" {
+		return e.New(e.CodeEngineCapability, "nightly runtime requires the protected main GitHub workflow on native Linux")
 	}
 	profile, err := loadNightlyProfile(ctx, os.Getenv("NVKR_NIGHTLY_PROFILES"), os.Getenv("NVKR_NIGHTLY_PROFILE"))
 	if err != nil {
@@ -111,14 +110,11 @@ func runNightlyPublishedCandidate(ctx context.Context, timing nightlyTiming) (re
 	if err != nil {
 		return err
 	}
-	if err := validateNightlyCycle(profile, build, os.Getenv("GITHUB_REPOSITORY"), os.Getenv("GITHUB_REPOSITORY_ID"), os.Getenv("GITHUB_SHA"), os.Getenv("GITHUB_RUN_ID"), os.Getenv("GITHUB_RUN_ATTEMPT"), os.Getenv("GITHUB_REF")); err != nil {
+	if err := validateNightlyCycle(profile, build, os.Getenv("GITHUB_REPOSITORY"), os.Getenv("GITHUB_REPOSITORY_ID"), os.Getenv("GITHUB_SHA"), os.Getenv("GITHUB_RUN_ID"), os.Getenv("GITHUB_RUN_ATTEMPT")); err != nil {
 		return err
 	}
 	tenantChecks, err := nativeE2EOptIn("NVKR_NIGHTLY_TENANT", os.Getenv("NVKR_NIGHTLY_TENANT"))
 	if err != nil {
-		return err
-	}
-	if err := admitNightlyTenantChecks(build, tenantChecks); err != nil {
 		return err
 	}
 	public, err := freshDestination(os.Getenv("NVKR_NIGHTLY_REPORTS"))
@@ -129,7 +125,6 @@ func runNightlyPublishedCandidate(ctx context.Context, timing nightlyTiming) (re
 		return e.Wrap(e.CodeImmutableViolation, err, "creating public nightly reports")
 	}
 	phase, subject := "preparation", ""
-	tenantChecksPassed := false
 	defer func() {
 		// Native VM cleanup and the held publication close before this report.
 		cleanup, cancel := timing.cleanupContext(ctx, nightlyReportGrace)
@@ -137,7 +132,7 @@ func runNightlyPublishedCandidate(ctx context.Context, timing nightlyTiming) (re
 		if ctx.Err() != nil {
 			resultErr = errors.Join(resultErr, e.Wrap(e.CodeTimeout, ctx.Err(), "nightly cycle canceled before its final verdict"))
 		}
-		resultErr = errors.Join(resultErr, writeNightlyCycle(cleanup, public, profile, build, subject, phase, tenantChecksPassed, resultErr))
+		resultErr = errors.Join(resultErr, writeNightlyCycle(cleanup, public, profile, build, subject, phase, resultErr))
 	}()
 	root := os.Getenv("GITHUB_WORKSPACE")
 	if !filepath.IsAbs(root) {
@@ -158,12 +153,6 @@ func runNightlyPublishedCandidate(ctx context.Context, timing nightlyTiming) (re
 	}
 	plan, err := factory.LoadPlanContext(ctx, filepath.Join(root, profile.Plan))
 	if err != nil {
-		return err
-	}
-	if err := admitNightlyBranch(build, os.Getenv("GITHUB_REF"), environment); err != nil {
-		return err
-	}
-	if err := admitNightlyBranch(build, os.Getenv("GITHUB_REF"), plan.Environment); err != nil {
 		return err
 	}
 	platform, err := nightlyRuntimePlatform(profile, plan, runtime.GOOS+"/"+runtime.GOARCH)
@@ -203,9 +192,8 @@ func runNightlyPublishedCandidate(ctx context.Context, timing nightlyTiming) (re
 	if err != nil {
 		return err
 	}
-	policy, err := nightlyVerificationPolicy(profile, build, os.Getenv("GITHUB_REPOSITORY"), os.Getenv("GITHUB_REF"), environment)
-	if err != nil {
-		return err
+	if environment.Signing == nil {
+		return e.New(e.CodeTrustPolicyMissing, "nightly requires the producing Environment's signing policy")
 	}
 	consumer, err := lifecycle.NewConsumer(lifecycle.ConsumerOptions{
 		CosignBinary: os.Getenv("NVKR_NIGHTLY_COSIGN"), CosignDigest: os.Getenv("NVKR_NIGHTLY_COSIGN_DIGEST"), WorkspaceRoot: filepath.Join(workspace, "verified"),
@@ -217,6 +205,8 @@ func runNightlyPublishedCandidate(ctx context.Context, timing nightlyTiming) (re
 	}
 	verifyCtx, verifyCancel := context.WithTimeout(ctx, 45*time.Minute)
 	defer verifyCancel()
+	policy := lifecycle.VerificationPolicy{Lane: lifecycle.LanePipeline, Scope: lifecycle.ScopeArtifactPublication, IdentityRegexp: environment.Signing.Identity,
+		Issuer: environment.Signing.Issuer, MinimumDiskEvidence: lifecycle.DiskEvidenceBuildProvenance}
 	verified, receipt, err := consumer.VerifyExactInputs(verifyCtx, inputs.Reference, policy, expectation)
 	if err != nil {
 		return err
@@ -234,39 +224,10 @@ func runNightlyPublishedCandidate(ctx context.Context, timing nightlyTiming) (re
 		}
 		if tenantChecks {
 			_, err := site.CreateTenant(ctx, "nightly-tenant")
-			tenantChecksPassed = err == nil
 			return err
 		}
 		return nil
 	})
-}
-
-func admitNightlyTenantChecks(build NightlyBuild, enabled bool) error {
-	branch, err := nightlySourceBranch(build)
-	if err != nil {
-		return err
-	}
-	if branch == nightlyCandidateBranch && !enabled {
-		return e.New(e.CodeEngineCapability, "nightly candidate validation requires tenant checks")
-	}
-	return nil
-}
-
-func nightlyVerificationPolicy(profile NightlyProfile, build NightlyBuild, repository, githubRef string, environment lifecycle.Environment) (lifecycle.VerificationPolicy, error) {
-	if err := admitNightlyBranch(build, githubRef, environment); err != nil {
-		return lifecycle.VerificationPolicy{}, err
-	}
-	if environment.Signing == nil {
-		return lifecycle.VerificationPolicy{}, e.New(e.CodeTrustPolicyMissing, "nightly requires the producing Environment's signing policy")
-	}
-	identity := "https://github.com/" + repository + "/.github/workflows/" + profile.BuildWorkflow + "@" + githubRef
-	allowed, err := regexp.Compile(environment.Signing.Identity)
-	if err != nil || !allowed.MatchString(identity) {
-		return lifecycle.VerificationPolicy{}, e.New(e.CodeUntrustedSigner, "nightly producer's exact workflow ref is outside its authored signing policy")
-	}
-	return lifecycle.VerificationPolicy{Lane: lifecycle.LanePipeline, Scope: lifecycle.ScopeArtifactPublication,
-		IdentityRegexp: "^" + regexp.QuoteMeta(identity) + "$", Issuer: environment.Signing.Issuer,
-		MinimumDiskEvidence: lifecycle.DiskEvidenceBuildProvenance}, nil
 }
 
 // Profile and Plan descriptions admit only a matching execution route here.
@@ -305,21 +266,16 @@ func nightlyRuntimePlatform(profile NightlyProfile, plan *factory.Plan, hostPlat
 	return platform, nil
 }
 
-func writeNightlyCycle(ctx context.Context, public string, profile NightlyProfile, build NightlyBuild, subject, phase string, tenantChecksPassed bool, resultErr error) error {
+func writeNightlyCycle(ctx context.Context, public string, profile NightlyProfile, build NightlyBuild, subject, phase string, resultErr error) error {
 	if ctx == nil {
 		return e.New(e.CodeUsage, "nightly cycle report requires a context")
 	}
 	if err := ctx.Err(); err != nil {
 		return e.Wrap(e.CodeTimeout, err, "nightly cycle report canceled")
 	}
-	branch, err := nightlySourceBranch(build)
-	if err != nil {
-		return err
-	}
 	if err := privateJSON(filepath.Join(public, "cycle.json"), map[string]any{
 		"profile": profile.Name, "releaseSubject": subject, "phase": phase,
 		"runtimePassed": phase == "runtime" && resultErr == nil, "qualificationAuthority": "none",
-		"tenantChecksPassed": tenantChecksPassed, "sourceBranch": branch,
 		"producerRun": build.ProducerRun, "producerAttempt": build.ProducerAttempt, "sourceCommit": build.SourceCommit,
 		"nvkeCommit":     build.NVKECommit,
 		"coordinatorRun": build.CoordinatorRun, "coordinatorAttempt": build.CoordinatorAttempt,

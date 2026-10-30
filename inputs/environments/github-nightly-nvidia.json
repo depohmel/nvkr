@@ -6,9 +6,6 @@
     "description": "Native ARM64 GitHub nightly candidate with operator-trusted ARC KVM disk production and pipeline-attested build-provenance-v1 publication. Runner availability, protected-environment admission and runtime qualification are independently gated."
   },
   "githubARC": "native-kvm-v1",
-  "githubDispatchBranches": [
-    "nvkr-validation"
-  ],
   "githubRunners": {
     "linux/amd64": "ubuntu-24.04",
     "linux/arm64": "ubuntu-24.04-arm"
@@ -33,14 +30,14 @@
   "publication": {
     "mode": "per-output-v1",
     "credentialRef": "github:NVKR_REGISTRY_WRITE",
-    "repositoryPrefix": "ghcr.io/dsx-ai-factory/nvkr/nightly-candidate/nvke-nightly-arm64"
+    "repositoryPrefix": "ghcr.io/dsx-ai-factory/nvkr/nightly/nvke-nightly-arm64"
   },
   "runtime": {
     "runtime": "docker",
     "buildNetworkPolicy": "producer-declared"
   },
   "signing": {
-    "identity": "^https://github\\.com/dsx-ai-factory/nvkr/\\.github/workflows/nvkr-run-nvke-nightly-arm64\\.yml@refs/heads/(main|nvkr-validation)$",
+    "identity": "^https://github\\.com/dsx-ai-factory/nvkr/\\.github/workflows/nvkr-run-nvke-nightly-arm64\\.yml@refs/heads/main$",
     "issuer": "https://token.actions.githubusercontent.com",
     "mode": "cosign"
   },

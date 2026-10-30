@@ -17,7 +17,6 @@ import (
 	"path/filepath"
 	"reflect"
 	"regexp"
-	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -63,7 +62,6 @@ type NightlyBuild struct {
 	ProducerRun        int64          `json:"producerRun"`
 	ProducerAttempt    int64          `json:"producerAttempt"`
 	SourceCommit       string         `json:"sourceCommit"`
-	SourceBranch       string         `json:"sourceBranch,omitempty"`
 	NVKECommit         string         `json:"nvkeCommit,omitempty"`
 	ProducerURL        string         `json:"producerURL"`
 	Trust              string         `json:"trust"`
@@ -204,42 +202,9 @@ func nightlyPositiveID(value string) (int64, error) {
 	return parsed, nil
 }
 
-const nightlyCandidateBranch = "nvkr-validation"
-
-func nightlySourceBranch(build NightlyBuild) (string, error) {
-	if build.SourceBranch == "" || build.SourceBranch == "main" {
-		return "main", nil
-	}
-	if build.SourceBranch == nightlyCandidateBranch {
-		return nightlyCandidateBranch, nil
-	}
-	return "", e.New(e.CodeEngineCapability, "nightly source branch is not an admitted validation route")
-}
-
-func admitNightlyBranch(build NightlyBuild, githubRef string, environment lifecycle.Environment) error {
-	branch, err := nightlySourceBranch(build)
-	if err != nil {
-		return err
-	}
-	if githubRef != "refs/heads/"+branch {
-		return e.New(e.CodeUnpinnedInput, "nightly source branch differs from the actual GitHub ref")
-	}
-	if branch == nightlyCandidateBranch && !slices.Contains(environment.GitHubDispatchBranches, branch) {
-		return e.New(e.CodeEngineCapability, "nightly candidate branch requires explicit Environment dispatch admission")
-	}
-	return nil
-}
-
-func validateNightlyCycle(profile NightlyProfile, build NightlyBuild, repository, repositoryID, sha, parentID, parentAttempt, githubRef string) error {
+func validateNightlyCycle(profile NightlyProfile, build NightlyBuild, repository, repositoryID, sha, parentID, parentAttempt string) error {
 	if err := validateNightlyProfile(profile); err != nil {
 		return err
-	}
-	branch, err := nightlySourceBranch(build)
-	if err != nil {
-		return err
-	}
-	if githubRef != "refs/heads/"+branch {
-		return e.New(e.CodeUnpinnedInput, "nightly locator differs from the actual coordinator ref")
 	}
 	parts := strings.Split(repository, "/")
 	if len(parts) != 2 || parts[0] == "" || parts[1] == "" || parts[0] == "." || parts[0] == ".." || parts[1] == "." || parts[1] == ".." || strings.ContainsAny(repository, "?#%\\\r\n") {
@@ -282,12 +247,7 @@ type nightlyGitHubRun struct {
 }
 
 func validateNightlyGitHubRun(run nightlyGitHubRun, profile NightlyProfile, build NightlyBuild, repository string, repositoryID int64) error {
-	branch, err := nightlySourceBranch(build)
-	if err != nil {
-		return err
-	}
-	workflowPath := ".github/workflows/" + profile.BuildWorkflow
-	if run.ID != build.ProducerRun || run.RunAttempt != build.ProducerAttempt || run.HeadSHA != build.SourceCommit || run.HeadBranch != branch || run.Event != "workflow_dispatch" || (run.Path != workflowPath && run.Path != workflowPath+"@"+branch) || run.Status != "completed" || run.Conclusion != "success" || run.HTMLURL != build.ProducerURL || run.Repository.ID != repositoryID || run.Repository.FullName != repository || run.HeadRepository.ID != repositoryID || run.HeadRepository.FullName != repository {
+	if run.ID != build.ProducerRun || run.RunAttempt != build.ProducerAttempt || run.HeadSHA != build.SourceCommit || run.HeadBranch != "main" || run.Event != "workflow_dispatch" || run.Path != ".github/workflows/"+profile.BuildWorkflow || run.Status != "completed" || run.Conclusion != "success" || run.HTMLURL != build.ProducerURL || run.Repository.ID != repositoryID || run.Repository.FullName != repository || run.HeadRepository.ID != repositoryID || run.HeadRepository.FullName != repository {
 		return e.New(e.CodeUnpinnedInput, "current GitHub producer run differs from exact successful cycle")
 	}
 	return nil
@@ -314,15 +274,11 @@ type nightlyArtifactList struct {
 }
 
 func selectNightlyArtifact(list nightlyArtifactList, name string, build NightlyBuild, repositoryID int64) (nightlyGitHubArtifact, error) {
-	branch, err := nightlySourceBranch(build)
-	if err != nil {
-		return nightlyGitHubArtifact{}, err
-	}
 	if list.TotalCount != 1 || len(list.Artifacts) != 1 {
 		return nightlyGitHubArtifact{}, e.New(e.CodeVerifyFailed, "missing or duplicate exact nightly artifact %s", name)
 	}
 	artifact := list.Artifacts[0]
-	if artifact.Name != name || artifact.ID <= 0 || artifact.ID > nightlyMaxJSONInteger || artifact.Size <= 0 || artifact.Size > diagnosticLimit || !canonical.IsDigest(artifact.Digest) || artifact.Expired == nil || *artifact.Expired || artifact.WorkflowRun.ID != build.ProducerRun || artifact.WorkflowRun.RepositoryID != repositoryID || artifact.WorkflowRun.HeadRepositoryID != repositoryID || artifact.WorkflowRun.HeadBranch != branch || artifact.WorkflowRun.HeadSHA != build.SourceCommit {
+	if artifact.Name != name || artifact.ID <= 0 || artifact.ID > nightlyMaxJSONInteger || artifact.Size <= 0 || artifact.Size > diagnosticLimit || !canonical.IsDigest(artifact.Digest) || artifact.Expired == nil || *artifact.Expired || artifact.WorkflowRun.ID != build.ProducerRun || artifact.WorkflowRun.RepositoryID != repositoryID || artifact.WorkflowRun.HeadRepositoryID != repositoryID || artifact.WorkflowRun.HeadBranch != "main" || artifact.WorkflowRun.HeadSHA != build.SourceCommit {
 		return nightlyGitHubArtifact{}, e.New(e.CodeUnpinnedInput, "nightly artifact origin, digest, expiration or size differs")
 	}
 	return artifact, nil
@@ -421,28 +377,22 @@ func nightlyCIStorageOptions() cistore.Options {
 }
 
 func newNightlyInputs(ctx context.Context, profile NightlyProfile, build NightlyBuild, plan *factory.Plan, definition lifecycle.Definition, environment lifecycle.Environment, workspace string) (*NightlyInputs, error) {
-	if os.Getenv("GITHUB_SERVER_URL") != "https://github.com" || os.Getenv("GH_TOKEN") == "" {
-		return nil, e.New(e.CodeEngineCapability, "nightly artifact retrieval requires explicit GitHub identity and API token")
+	if os.Getenv("GITHUB_SERVER_URL") != "https://github.com" || os.Getenv("GITHUB_REF") != "refs/heads/main" || os.Getenv("GH_TOKEN") == "" {
+		return nil, e.New(e.CodeEngineCapability, "nightly artifact retrieval requires explicit main-branch GitHub identity and API token")
 	}
 	runner := Runner{Work: workspace, Env: os.Environ()}
-	return newNightlyInputsWithCapture(ctx, profile, build, plan, definition, environment, workspace, os.Getenv("GITHUB_REPOSITORY"), os.Getenv("GITHUB_REPOSITORY_ID"), os.Getenv("GITHUB_SHA"), os.Getenv("GITHUB_RUN_ID"), os.Getenv("GITHUB_RUN_ATTEMPT"), os.Getenv("GITHUB_REF"), runner.Capture)
+	return newNightlyInputsWithCapture(ctx, profile, build, plan, definition, environment, workspace, os.Getenv("GITHUB_REPOSITORY"), os.Getenv("GITHUB_REPOSITORY_ID"), os.Getenv("GITHUB_SHA"), os.Getenv("GITHUB_RUN_ID"), os.Getenv("GITHUB_RUN_ATTEMPT"), runner.Capture)
 }
 
-func newNightlyInputsWithCapture(ctx context.Context, profile NightlyProfile, build NightlyBuild, plan *factory.Plan, definition lifecycle.Definition, environment lifecycle.Environment, workspace, repository, repositoryID, sha, parentID, parentAttempt, githubRef string, capture nightlyCapture) (*NightlyInputs, error) {
+func newNightlyInputsWithCapture(ctx context.Context, profile NightlyProfile, build NightlyBuild, plan *factory.Plan, definition lifecycle.Definition, environment lifecycle.Environment, workspace, repository, repositoryID, sha, parentID, parentAttempt string, capture nightlyCapture) (*NightlyInputs, error) {
 	if err := requireContext(ctx); err != nil {
 		return nil, e.Wrap(e.CodeTimeout, err, "nightly input context")
 	}
-	if err := validateNightlyCycle(profile, build, repository, repositoryID, sha, parentID, parentAttempt, githubRef); err != nil {
+	if err := validateNightlyCycle(profile, build, repository, repositoryID, sha, parentID, parentAttempt); err != nil {
 		return nil, err
 	}
 	if plan == nil || capture == nil {
 		return nil, e.New(e.CodeUsage, "nightly handoff requires exact compiled Plan and command owner")
-	}
-	if err := admitNightlyBranch(build, githubRef, environment); err != nil {
-		return nil, err
-	}
-	if err := admitNightlyBranch(build, githubRef, plan.Environment); err != nil {
-		return nil, err
 	}
 	if source := environment.GitHubRuntimeSource; source != nil && (!nightlyGitCommit(build.NVKECommit) || source.Repository != "https://github.com/dsx-ai-factory/nvke" || source.Ref != "refs/heads/main") {
 		return nil, e.New(e.CodeUnpinnedInput, "nightly source policy requires the cycle-selected exact NVKE main revision")
@@ -568,9 +518,6 @@ func newNightlyInputsWithCapture(ctx context.Context, profile NightlyProfile, bu
 	}
 	if environment.GitHubRuntimeSource != nil && (plan.RuntimeSourceCommit != build.NVKECommit || harnessCommit != build.NVKECommit) {
 		return nil, e.New(e.CodeUnpinnedInput, "frozen producer Plan differs from the cycle-selected NVKE main revision")
-	}
-	if err := admitNightlyBranch(build, githubRef, plan.Environment); err != nil {
-		return nil, err
 	}
 	var publication factory.Artifact
 	for _, artifact := range plan.Graph.Artifacts {

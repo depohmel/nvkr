@@ -44,17 +44,6 @@ explicit maintained-input refresh remain follow-ups. The guide distinguishes pri
 
 ## Definition → Run
 
-For a full nightly pipeline check before merging, use the reviewed operator
-helper `nightly-validate.sh --approve PR EXACT_COMMIT FRESH_OUTPUT_DIRECTORY`.
-It promotes the approved exact PR/mirror commit to the reserved validation ref,
-dispatches the existing generated producer through the nightly coordinator, and
-requires build, private publication, native site, tenant and joined-cleanup
-results. It never merges the PR. This privileged command requires the one-time
-ref/environment setup and explicit code-trust approval documented in
-[nightly validation](../docs/nvke-nightly.md#validate-pipeline-changes-before-merging).
-Keep its operator credential outside the candidate runner. `--unlock` recovers
-an exact orphaned lock only after all candidate runs are terminal.
-
 For repository pipeline changes, `make pipeline-dev-run PIPELINE_DEV_REPO=owner/repo` checks the generated
 development bundle and calls `pipeline-dev.py`. The helper requires a clean named branch matching the
 remote commit and an active registered `nvkr-dev.yml`, then dispatches that branch explicitly. It performs

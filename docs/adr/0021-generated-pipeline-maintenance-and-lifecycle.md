@@ -61,11 +61,17 @@ callable trigger. By default every producer job remains in its bundle's entry wo
 belong to this entry's current manifest; arbitrary reusable workflows and another owner's siblings remain
 outside its namespace. Every worker receives the same per-file size and parsing bounds as the entry.
 The root manifest binds every worker's exact bytes. Regeneration checks and retirement cover the complete
-worker inventory, including changed or unowned leftovers. Workers share one complete Plan and do not add
+worker inventory, including changed or unowned leftovers. Workers export per-consumer result fragments so the
+entry does not repeat member-by-member projections (ADR-18 §8). This moved most result-forwarding bytes into
+workers. The maintained development entry measured 373,817 bytes before the change and 264,038 after, with
+the largest worker at 134,308 bytes and unchanged signer jobs. These are local generation measurements.
+Workers never contain OIDC jobs. A fixed `<entry-stem>__signer.yml` signer workflow is proposed only
+together with ADR-18 §8's explicit certificate-identity and trust-policy migration. It is not an admitted
+member name; the reserved child-namespace rules below fail closed on such a file. Workers share one complete Plan and do not add
 an authored lifecycle object or a child Release. ADR-18 owns scheduling and result propagation. [Reconciliation](reconciliation.md#output-local-publication-and-metadata-assembly)
 records one successful earlier-head full development execution of this opt-in topology; it predates the core
-execution-model extraction and proves neither current-head worker execution, full-product failure/cancellation
-recovery nor production qualification. Optional qualification
+execution-model extraction and per-worker fragment forwarding, and proves neither current-head worker execution,
+full-product failure/cancellation recovery nor production qualification. Optional qualification
 generation separately emits the admitted `workflow_run` qualifier and fixed `workflow_call` smoke pair (§4).
 That pair currently admits the default producer workflow only; named producer
 qualification is not part of this namespace contract.

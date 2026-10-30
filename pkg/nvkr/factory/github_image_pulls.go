@@ -51,7 +51,6 @@ func githubPrivateToolchain(plan *Plan, image string) bool {
 	case "ghcr.io/dsx-ai-factory/nvkr/m2-candidate",
 		"ghcr.io/dsx-ai-factory/nvkr/m2-candidate/disks",
 		"ghcr.io/dsx-ai-factory/nvkr/nightly/nvke-nightly-arm64",
-		"ghcr.io/dsx-ai-factory/nvkr/nightly-candidate/nvke-nightly-arm64",
 		"ghcr.io/dsx-ai-factory/nvkr/nightly/nvke-nightly-upstream-ovn-arm64":
 		return strings.HasPrefix(image, "ghcr.io/dsx-ai-factory/nvkr/m2-candidate/toolchains/")
 	default:

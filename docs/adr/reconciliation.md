@@ -661,6 +661,12 @@ observations, without a shared Run/artifact record or a committed test of these 
 establish independently verifiable OS-material placement or a current product build. Offline input
 compilation and catalog-copy checks establish only the authored selections and bindings.
 
+The simplified Ubuntu 26.04 ARM64 SDK/package exercise remains a developer-local operator observation
+in the `unqualified-local-execution` lane. No shared immutable Run or artifact reference is available;
+local measurements do not establish an independently verifiable current build, reproduction,
+OS-material assembly, installation, dependency inspection or runtime acceptance. The other SDK routes
+remain unexercised; signing and publication remain deferred.
+
 Historical observations used the retired patched recipes and extra Debian execution protocol. Standalone
 package/image/chart payloads were removed during authorized cleanup. Their identities and observation scope
 remain in the [immutable prior record](https://github.com/dsx-ai-factory/nvkr/blob/7951d85513caa8fcfa576f9315372ab907f6d9c7/definitions/nvsentinel/README.md).
@@ -2938,7 +2944,7 @@ missing, extra, failed, skipped, canceled, oversized and inconsistent reports, i
 An opt-in `githubExecutionPartitions` projection now generates bounded same-commit workers beneath one
 Definition/Plan/Run/Release. Focused local tests cover deterministic grouping, original job membership,
 worker/caller generation, exact-member tamper refusal and manifest retirement. The maintained development
-input projects to 21 workers with a 368,371-byte entry. OIDC-signing jobs remain inline to preserve the
+input projected to 21 workers with a 368,371-byte entry before timeout splitting and fragment forwarding (below). OIDC-signing jobs remain inline to preserve the
 entry certificate identity; generated caller/workers pass actionlint. These are
 local generation measurements, not product execution evidence. A separate minimal diagnostic at commit
 `902f3febd10cd61abecb82571f66283857169851` observed successful result forwarding on
@@ -3062,6 +3068,34 @@ lifecycle package timed out on that loaded shared host. The CI factory and lifec
 inside the 20-minute `GO_TEST_TIMEOUT` shard default. The gate also covered golangci-lint 2.14.0 with zero
 issues, vet, formatting, license headers, shellcheck, the CI-tool tests and vulnerability scanning. After
 the merge with main, merge-gate Actions run 40962543119 passed every factory, lifecycle and package shard.
+
+Partition grouping now orders each dependency depth by the bounded finish time of declared job timeouts
+and splits a depth at the widest finish gaps up to a 30-worker target. The regenerated development bundle
+keeps its Plan bytes, moves from 21 to 30 workers and passes exact drift checks. Unit contracts cover
+ordering, gap splitting, pinned entry jobs and coded rejection of missing bounds or unknown pinned jobs.
+The [scheduling harness](../execution-partition-scheduling.md) simulates the maintained NVKE and hosted
+diagnostic Plans with estimated durations anchored to recorded disk, signing and verification timings; it
+estimates a 17–26% shorter development makespan across three assumed capacity scenarios and no makespan
+loss on any measured Plan. These are local simulated contracts, not hosted wall-time evidence. The hosted
+development Run above used the original depth grouping; the timeout grouping has not been externally
+exercised.
+
+Entry-workflow reduction keeps every signer inline. Workers now export per-consumer result fragments, and the
+entry joins one fragment per worker instead of re-projecting each member from the worker's complete report.
+Regeneration through `run generate` leaves the development Plan byte-identical. Against the 30-worker timeout
+layout, the entry falls from 373,817 to 264,038 bytes. The workers grow by 185,152 bytes in total, so the complete bundle grows by 75,373
+bytes, and the largest file is now the entry.
+Signer jobs and the finalizer are byte-identical. Expanded parsing events in the entry are unchanged at
+13,308, because signers dominate them: 139 OIDC jobs account for 10,984 events. The flat default producer
+remains at 394,695 bytes and 47,055 events, which is 94.1% of the 50,000-event bound. Its 139 signers
+account for 10,984 of those events. Contracts resolve every forwarded fragment back to the exact
+Plan-derived collector members, statuses and worker dependency reads. They also check that an unreported
+worker's fallback reproduces the replaced projection's null results and empty statuses. They also require each committed
+producer's OIDC jobs to sit in the entry workflow named by its anchored signer policy, and that policy to
+admit no other committed workflow file. Lowering refuses worker or caller `id-token` declarations with
+`CodeEngineCapability`. These are local generation and contract results. The hosted Run 40727132359 above
+predates fragment forwarding, so hosted execution of the new forwarding, including failure and cancellation
+reporting, is unrecorded. Signer relocation remains a proposed ADR-18 §8 design with no implementation.
 
 Earlier flat-layout measurements recorded 564 original jobs and 16 collectors, down from
 596 original jobs and 16 collectors in the private-storage draft based on the same upstream code.
@@ -3540,8 +3574,7 @@ Plan that differs from the coordinator's selected NVKE commit. The existing Go
 native owners consume the authenticated CLI, images, disk and installer without
 a second product build or fabricated local Run. They bootstrap the site VM through
 a temporary kind/Lima backend, check the live API and Ready node, and join owned
-cleanup. Scheduled and candidate-validation cycles require tenant workload/DNS
-checks; manual main cycles may explicitly omit them. Local `TestEndToEnd`
+cleanup. Tenant workload/DNS checks remain manual opt-ins. Local `TestEndToEnd`
 retains its separate fresh-build developer flow, with site smoke by default and
 tenant/conformance checks selected explicitly. Its host-matched Linux AMD64
 defaults do not add an AMD64 generated nightly producer or a recorded runtime
@@ -3565,34 +3598,6 @@ paths and environment scrubbing provide no independent sandbox, and test results
 remain unsigned diagnostics. Existing ADR-16 conformance and generated producer
 identity/result contracts are unchanged. The daily 03:17 UTC trigger is retained
 at the user's explicit request.
-
-The pre-merge path reuses the same coordinator and generated producer on the
-exact `nvkr-validation` branch. The operator helper approves one exact current
-PR/mirror commit, atomically leases the candidate and persistent lock refs, dispatches and
-joins only the returned coordinator ID, and requires successful build/runtime
-jobs plus the branch/commit-bound runtime and tenant verdict after cleanup. The
-consumer narrows signer verification to that actual workflow ref, preserving the
-frozen Environment. Main and validation nightly publication move together to the
-fresh `nightly-candidate/nvke-nightly-arm64` prefix; existing private/internal and
-unlinked-package checks remain mandatory. This is implemented candidate execution,
-not a recorded successful hosted run. Branch-write restrictions, exact ARC/release
-environment admission, private package grants and any required full-E2E GitHub
-status remain external setup, unverified by local contract tests. No provider
-setting or package access change is established by these source changes.
-Lock release/recovery uses an exact CAS back to an existing Git-checkpoint idle
-marker, never ref deletion. This allows both automation refs to remain undeletable
-while limiting creation/force updates to the operator. The marker is concurrency
-state, outside artifact and release authority.
-Main and candidate coordinator execution share the deployed noncanceling workflow
-group. The operator checks main-coordinator nonterminal states before and after
-promotion; an observed race retains the lease without dispatch. Default pending
-queue replacement is reported as exact-run failure, not treated as successful
-runtime execution or a FIFO guarantee.
-Candidate ref protections and deployment policies do not restrict who may enqueue
-workflow dispatches. Workflow actor restrictions remain a separate provider-policy
-decision that must preserve authorized main execution; no actor allowlist is
-configured or claimed. Other writers can therefore displace a pending validation,
-which fails and retains its lease rather than accepting a replacement run.
 
 The archive correction selects source-built tarball assets in executable bundles
 through exact resolved-component and producer/output membership. Helm and disk
