@@ -44,8 +44,9 @@ captures and private logs instead of forwarding large Plan JSON to Actions.
 Command stderr and the final build's ordinary output continue streaming.
 
 Before checkout and builds, the disposable runner removes its unused Android,
-.NET and Haskell SDK directories and records their sizes and remaining disk
-space. Product outputs, Docker and Go stay local and intact. The disk producer's
+.NET and Haskell SDK directories and records free space before and after cleanup.
+It avoids recursive size diagnostics that can time out before cleanup starts.
+Product outputs, Docker and Go stay local and intact. The disk producer's
 64-GiB free-workspace admission remains unchanged. [Run 41075323371](https://github.com/dsx-ai-factory/nvkr/actions/runs/41075323371)
 reached that gate after preparing the installer ISO, with 48,748 MiB available
 against 65,536 MiB required. The cleanup change still needs a complete hosted run
