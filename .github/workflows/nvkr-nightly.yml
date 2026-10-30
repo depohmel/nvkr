@@ -34,6 +34,21 @@ jobs:
           nproc
           free -m
           df -Pm "$RUNNER_TEMP"
+      - name: Reclaim unused SDK space on the disposable hosted runner
+        timeout-minutes: 10
+        run: |
+          set -euo pipefail
+          test "$RUNNER_ENVIRONMENT" = github-hosted
+          # Fixed preinstalled SDKs are unused by this Go/KVM job. Reclaim them
+          # before checkout/build; preserve Docker, Go, sources and all outputs.
+          for sdk in /usr/local/lib/android /usr/share/dotnet /usr/local/.ghcup; do
+            if [[ -d "$sdk" ]]; then
+              sudo -n timeout --kill-after=10s 60s du -sm -- "$sdk"
+            fi
+          done
+          sudo -n timeout --kill-after=10s 300s rm -rf -- \
+            /usr/local/lib/android /usr/share/dotnet /usr/local/.ghcup
+          df -Pm "$RUNNER_TEMP"
       - name: Check out the dispatched NVKR branch
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
