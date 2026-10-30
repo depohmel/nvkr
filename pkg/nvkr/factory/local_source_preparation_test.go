@@ -109,7 +109,9 @@ func TestPrepareLocalNVKESourceFreezesCapturedAMD64Graph(t *testing.T) {
 		t.Fatalf("native-build-toolchain-scopes: %v: %s", err, projected)
 	}
 	var scopes []struct {
-		Outputs []string `json:"outputs"`
+		Outputs    []string `json:"outputs"`
+		Components []string `json:"components"`
+		Pin        string   `json:"pin"`
 	}
 	if err := json.Unmarshal(projected, &scopes); err != nil {
 		t.Fatal(err)
@@ -167,6 +169,9 @@ func TestPrepareLocalNVKESourceFreezesCapturedAMD64Graph(t *testing.T) {
 				if component.Commit != commit || component.Tag != commit {
 					t.Fatalf("catalog member %s/%s was not frozen", build.Name, name)
 				}
+				if component.ToolchainImage != original.ToolchainImage || !reflect.DeepEqual(component.ToolchainImages, original.ToolchainImages) {
+					t.Fatalf("source preparation changed catalog toolchain %s/%s", build.Name, name)
+				}
 			} else if name == "native-capi-exec-init-image" {
 				if !reflect.DeepEqual(component, wantInit) {
 					t.Fatal("catalog init image differs from its authored current-main component")
@@ -183,7 +188,7 @@ func TestPrepareLocalNVKESourceFreezesCapturedAMD64Graph(t *testing.T) {
 				if component.Commit != commit || component.Tag != commit || component.SourceDate == 0 || component.TreeHash == "" {
 					t.Fatalf("%s/%s was not frozen", build.Name, name)
 				}
-				if name != "nvke-image-inputs" && (!reflect.DeepEqual(original.BuildCommand, component.BuildCommand) || original.ToolchainImage != component.ToolchainImage) {
+				if original.ToolchainImage != component.ToolchainImage || !reflect.DeepEqual(original.ToolchainImages, component.ToolchainImages) || (name != "nvke-image-inputs" && !reflect.DeepEqual(original.BuildCommand, component.BuildCommand)) {
 					t.Fatalf("source selection changed producer %s", name)
 				}
 			} else if name == "native-capi-exec-init-image" {
@@ -194,6 +199,15 @@ func TestPrepareLocalNVKESourceFreezesCapturedAMD64Graph(t *testing.T) {
 				t.Fatalf("independent component %s changed", name)
 			}
 			if name == "nvke-image-inputs" {
+				covered := false
+				for _, scope := range scopes {
+					if slices.Contains(scope.Outputs, build.Name) && slices.Contains(scope.Components, name) && scope.Pin == component.ToolchainImages["amd64"] {
+						covered = true
+					}
+				}
+				if !covered {
+					t.Fatal("current-main material producer is outside local toolchain preparation")
+				}
 				if !bytes.Contains([]byte(strings.Join(component.BuildCommand, " ")), []byte("doca-ovs")) {
 					t.Fatal("current-main DOCA material producer was not selected")
 				}

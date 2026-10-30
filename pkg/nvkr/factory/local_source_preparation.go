@@ -5,6 +5,7 @@ package factory
 
 import (
 	"context"
+	"maps"
 	"os"
 	"path/filepath"
 	"strings"
@@ -113,7 +114,13 @@ func PrepareLocalNVKESource(ctx context.Context, repository, definitionPath, env
 		}
 		overlay := catalog.Overlay{APIVersion: catalog.OverlayAPIVersion, Kind: catalog.OverlayKind, Name: "local-current-main-compatibility", RequiresCatalogDigest: stack.Digest, Components: make(map[string]catalog.ComponentReplacement)}
 		for name, component := range compatible {
-			if _, exists := stack.Catalog.Components[name]; exists {
+			if original, exists := stack.Catalog.Components[name]; exists {
+				if name == "nvke-image-inputs" {
+					// Reuse current-main material commands without undoing the
+					// selected catalog's native toolchain substitutions.
+					component.ToolchainImage = original.ToolchainImage
+					component.ToolchainImages = maps.Clone(original.ToolchainImages)
+				}
 				overlay.Components[name] = catalog.ComponentReplacement{Component: &component}
 			}
 		}
