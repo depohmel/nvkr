@@ -51,6 +51,11 @@ runner shutdown; they establish neither its sender nor minimum resource
 requirements. Product files, process arguments and environments are not printed
 by the sampler.
 
+After authenticated Packer staging completes and its container is removed, the
+transport-only input and work archives close before the installer VM starts.
+Original material capabilities remain held through producer-consumption recording.
+This avoids retaining another complete input carrier alongside the guest.
+
 Before checkout and builds, the disposable runner removes its unused Android,
 .NET and Haskell SDK directories and records free space before and after cleanup.
 It avoids recursive size diagnostics that can time out before cleanup starts.
