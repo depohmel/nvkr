@@ -4,6 +4,7 @@
 package buildgraph_test
 
 import (
+	"os"
 	"os/exec"
 	"path/filepath"
 	"reflect"
@@ -87,6 +88,38 @@ func TestNightlyDOCAAcquisitionFeedsOfflineImageComposition(t *testing.T) {
 	producer := stack.Catalog.Components["nvke-image-inputs"]
 	if !producer.FromSource || producer.Tag != producer.Commit || !reflect.DeepEqual(producer.Materials, prior.Catalog.Components["nvke-image-inputs"].Materials) {
 		t.Fatal("current-main recipe lost its exact source descriptor or original material closure")
+	}
+	staging, _, found := strings.Cut(prior.Catalog.Components["nvke-image-inputs"].BuildCommand[2], "python3 ")
+	if !found || !strings.Contains(staging, "dhcp-identifier: mac") || !strings.HasPrefix(producer.BuildCommand[2], staging) ||
+		!strings.Contains(producer.BuildCommand[2], `--source-files-dir "$files"`) {
+		t.Fatal("DOCA composition dropped the native recipe's private MAC DHCP staging")
+	}
+	root := t.TempDir()
+	sourceFiles := filepath.Join(root, "os-image", "files")
+	if err := os.MkdirAll(sourceFiles, 0700); err != nil {
+		t.Fatal(err)
+	}
+	original := []byte("source-owned netplan without the local override\n")
+	for name, body := range map[string][]byte{"00-dhcp-all.yaml": original, "retained-input": []byte("other source file\n")} {
+		if err := os.WriteFile(filepath.Join(sourceFiles, name), body, 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// Execute the unchanged native staging prefix from the replacement command.
+	// Only its absolute source/output root moves into this private fixture.
+	command := strings.ReplaceAll(producer.BuildCommand[2][:len(staging)], "/src/", root+"/")
+	if output, err := exec.CommandContext(t.Context(), "bash", "-ec", command).CombinedOutput(); err != nil {
+		t.Fatalf("private image-file staging: %v: %s", err, output)
+	}
+	stagedFiles := filepath.Join(root, "nvkr-output", "native-image-files")
+	if raw, err := os.ReadFile(filepath.Join(stagedFiles, "00-dhcp-all.yaml")); err != nil || !strings.Contains(string(raw), "dhcp-identifier: mac\n") {
+		t.Fatal("staged netplan omits MAC DHCP identity", err)
+	}
+	if raw, err := os.ReadFile(filepath.Join(stagedFiles, "retained-input")); err != nil || string(raw) != "other source file\n" {
+		t.Fatal("private staging lost another source-owned image file", err)
+	}
+	if raw, err := os.ReadFile(filepath.Join(sourceFiles, "00-dhcp-all.yaml")); err != nil || string(raw) != string(original) {
+		t.Fatal("private staging changed the pinned source's netplan bytes", err)
 	}
 	vendor := strings.Join(producer.VendorCommand, "\n")
 	if !strings.Contains(vendor, "make -C os-image/packages/doca-ovs debs") || strings.Contains(vendor, "DOCA_VERSION=") || strings.Contains(vendor, "https://") {

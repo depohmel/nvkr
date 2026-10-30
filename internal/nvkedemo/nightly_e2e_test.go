@@ -279,6 +279,13 @@ func nightlyRuntimePlatform(profile NightlyProfile, plan *factory.Plan, hostPlat
 	if target.ValidatePlatform(hostPlatform) != nil || hostPlatform != platform {
 		return "", e.New(e.CodeEngineCapability, "nightly runtime host %q differs from selected native platform %q", hostPlatform, platform)
 	}
+	diskOutput, err := selectedDiskOutputForArchitecture(profile.Network, target.Arch(platform))
+	if err != nil {
+		return "", err
+	}
+	if profile.DiskOutput != diskOutput {
+		return "", e.New(e.CodeVerifyFailed, "nightly profile disk %q differs from selected native disk %q", profile.DiskOutput, diskOutput)
+	}
 	if plan == nil || profile.DiskOutput == "" {
 		return "", e.New(e.CodeVerifyFailed, "nightly runtime requires its selected disk Plan")
 	}
