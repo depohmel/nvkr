@@ -112,8 +112,8 @@ func PrepareLocalNVKESource(ctx context.Context, repository, definitionPath, env
 			return NativeBuildPreparation{}, err
 		}
 		overlay := catalog.Overlay{APIVersion: catalog.OverlayAPIVersion, Kind: catalog.OverlayKind, Name: "local-current-main-compatibility", RequiresCatalogDigest: stack.Digest, Components: make(map[string]catalog.ComponentReplacement)}
-		for _, name := range output.Components {
-			if component, exists := compatible[name]; exists {
+		for name, component := range compatible {
+			if _, exists := stack.Catalog.Components[name]; exists {
 				overlay.Components[name] = catalog.ComponentReplacement{Component: &component}
 			}
 		}
@@ -129,7 +129,7 @@ func PrepareLocalNVKESource(ctx context.Context, repository, definitionPath, env
 		}
 		components[output.Name] = frozen.Catalog.Components
 	}
-	prepared, err := prepareLocalInputs(ctx, definitionPath, environmentPath, out, map[string]any{}, func(*authored.Environment, string) error { return nil },
+	prepared, err := prepareLocalInputsWithScope(ctx, definitionPath, environmentPath, out, map[string]any{}, func(*authored.Environment, string) error { return nil },
 		func(output authored.DefinitionOutput, name string, original catalog.Component) (catalog.Component, bool, error) {
 			selected, ok := components[output.Name][name]
 			if !ok {
@@ -139,7 +139,7 @@ func PrepareLocalNVKESource(ctx context.Context, repository, definitionPath, env
 				return original, false, nil
 			}
 			return selected, true, nil
-		})
+		}, true)
 	if err != nil {
 		return NativeBuildPreparation{}, err
 	}

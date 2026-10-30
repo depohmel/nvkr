@@ -5,13 +5,18 @@ package factory
 
 import (
 	"bytes"
+	"context"
+	"encoding/json"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
+	"time"
 
+	"github.com/dsx-ai-factory/nvkr/pkg/nvkr/canonical"
 	"github.com/dsx-ai-factory/nvkr/pkg/nvkr/catalog"
 	authored "github.com/dsx-ai-factory/nvkr/pkg/nvkr/definition"
 	e "github.com/dsx-ai-factory/nvkr/pkg/nvkr/errors"
@@ -20,6 +25,10 @@ import (
 func TestPrepareLocalNVKESourceFreezesCapturedAMD64Graph(t *testing.T) {
 	// Reuse the owning pin-set fixture: only its temporary lock follows the local
 	// deploy metadata. Authored producer commands and every other pin remain exact.
+	scripts, err := filepath.Abs("../../../scripts")
+	if err != nil {
+		t.Fatal(err)
+	}
 	fixture, commit := controllerCatalogFixture(t, "../../../inputs/catalogs/nvke/release")
 	source := strings.TrimSuffix(strings.TrimPrefix(os.Getenv("GIT_CONFIG_KEY_0"), "url."), ".insteadOf")
 	if err := os.Symlink(source, source+".git"); err != nil {
@@ -84,6 +93,44 @@ func TestPrepareLocalNVKESourceFreezesCapturedAMD64Graph(t *testing.T) {
 	if len(before.Builds) != len(after.Builds) {
 		t.Fatal("source selection changed outputs")
 	}
+	// Exercise the exact projection used by prepareDefaultNativeBuild, rather than
+	// duplicating its catalog grouping logic in a test-only approximation.
+	rawPlan, err := canonical.Marshal(after)
+	if err != nil {
+		t.Fatal(err)
+	}
+	projectionCtx, cancelProjection := context.WithTimeout(t.Context(), 15*time.Second)
+	defer cancelProjection()
+	projection := exec.CommandContext(projectionCtx, "jq", "-L", scripts, "-e", `include "nvke-os-plan"; local_toolchain_scopes("all"; "amd64")`)
+	projection.WaitDelay = time.Second
+	projection.Stdin = bytes.NewReader(rawPlan)
+	projected, err := projection.CombinedOutput()
+	if err != nil {
+		t.Fatalf("native-build-toolchain-scopes: %v: %s", err, projected)
+	}
+	var scopes []struct {
+		Outputs []string `json:"outputs"`
+	}
+	if err := json.Unmarshal(projected, &scopes); err != nil {
+		t.Fatal(err)
+	}
+	sharedCharts := false
+	for _, scope := range scopes {
+		if slices.Contains(scope.Outputs, "controller-chart") && slices.Contains(scope.Outputs, "nktp") {
+			sharedCharts = true
+		}
+	}
+	if len(scopes) != 3 || !sharedCharts {
+		t.Fatal("native source preparation split the site chart toolchain cohort")
+	}
+	cohorts := make(map[string]string)
+	for index, build := range after.Builds {
+		original := before.Builds[index]
+		if digest, exists := cohorts[original.CatalogDigest]; exists && digest != build.CatalogDigest {
+			t.Fatalf("source preparation split catalog cohort for %s", build.Name)
+		}
+		cohorts[original.CatalogDigest] = build.CatalogDigest
+	}
 	nightly, err := authored.LoadDefinition(t.Context(), "inputs/definitions/demo/arm64-nvidia-kvm.json")
 	if err != nil {
 		t.Fatal(err)
@@ -113,6 +160,20 @@ func TestPrepareLocalNVKESourceFreezesCapturedAMD64Graph(t *testing.T) {
 		prior := before.Builds[index]
 		if prior.Name != build.Name || build.Platform != "linux/amd64" {
 			t.Fatal("source selection changed named target")
+		}
+		for name, component := range build.CatalogSnapshot.Components {
+			original := prior.CatalogSnapshot.Components[name]
+			if component.FromSource && strings.TrimSuffix(component.Repo, ".git") == localNVKERepository {
+				if component.Commit != commit || component.Tag != commit {
+					t.Fatalf("catalog member %s/%s was not frozen", build.Name, name)
+				}
+			} else if name == "native-capi-exec-init-image" {
+				if !reflect.DeepEqual(component, wantInit) {
+					t.Fatal("catalog init image differs from its authored current-main component")
+				}
+			} else if !reflect.DeepEqual(component, original) {
+				t.Fatalf("independent catalog member %s changed", name)
+			}
 		}
 		for componentIndex, component := range build.ResolvedComponents {
 			name := component.Name
