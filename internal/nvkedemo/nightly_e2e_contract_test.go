@@ -24,6 +24,7 @@ import (
 func TestNightlyRuntimeBindsProfileDiskAndNativeHost(t *testing.T) {
 	for _, test := range []struct {
 		name, runtimeTarget, host, diskPlatform string
+		diskOutput                              string
 		missing, duplicate, noPlan              bool
 		code                                    e.Code
 	}{
@@ -35,13 +36,22 @@ func TestNightlyRuntimeBindsProfileDiskAndNativeHost(t *testing.T) {
 		{name: "unsupported target", runtimeTarget: "native-s390x-vm", host: "linux/arm64", diskPlatform: "linux/arm64", code: e.CodeEngineCapability},
 		{name: "cross architecture disk", runtimeTarget: "native-amd64-vm", host: "linux/amd64", diskPlatform: "linux/arm64", code: e.CodeVerifyFailed},
 		{name: "unsupported disk", runtimeTarget: "native-arm64-vm", host: "linux/arm64", diskPlatform: "linux/s390x", code: e.CodeVerifyFailed},
+		{name: "different same architecture disk", runtimeTarget: "native-arm64-vm", host: "linux/arm64", diskPlatform: "linux/arm64", diskOutput: "other-disk", code: e.CodeVerifyFailed},
 		{name: "missing disk", runtimeTarget: "native-arm64-vm", host: "linux/arm64", missing: true, code: e.CodeVerifyFailed},
 		{name: "ambiguous disk", runtimeTarget: "native-arm64-vm", host: "linux/arm64", diskPlatform: "linux/arm64", duplicate: true, code: e.CodeVerifyFailed},
 		{name: "missing Plan", runtimeTarget: "native-arm64-vm", host: "linux/arm64", noPlan: true, code: e.CodeVerifyFailed},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			profile := NightlyProfile{RuntimeTarget: test.runtimeTarget, DiskOutput: "disk"}
+			diskOutput := "nvke-node-image-arm64"
+			if test.runtimeTarget == "native-amd64-vm" {
+				diskOutput = "nvke-node-image-amd64"
+			}
+			profile := NightlyProfile{RuntimeTarget: test.runtimeTarget, Network: "ovn", DiskOutput: diskOutput}
 			plan := &factory.Plan{Builds: []factory.BuildPlan{{Name: "unselected-disk", Platform: "linux/other"}}}
+			if test.diskOutput != "" {
+				plan.Builds = append(plan.Builds, factory.BuildPlan{Name: diskOutput, Platform: test.diskPlatform})
+				profile.DiskOutput = test.diskOutput
+			}
 			if !test.missing {
 				plan.Builds = append(plan.Builds, factory.BuildPlan{Name: profile.DiskOutput, Platform: test.diskPlatform})
 			}
