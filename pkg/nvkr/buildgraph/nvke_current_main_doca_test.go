@@ -94,7 +94,7 @@ func TestNightlyDOCAAcquisitionFeedsOfflineImageComposition(t *testing.T) {
 		!strings.Contains(producer.BuildCommand[2], `--source-files-dir "$files"`) {
 		t.Fatal("DOCA composition dropped the native recipe's private MAC DHCP staging")
 	}
-	root := t.TempDir()
+	root := filepath.Join(t.TempDir(), "source with spaces")
 	sourceFiles := filepath.Join(root, "os-image", "files")
 	if err := os.MkdirAll(sourceFiles, 0700); err != nil {
 		t.Fatal(err)
@@ -107,8 +107,10 @@ func TestNightlyDOCAAcquisitionFeedsOfflineImageComposition(t *testing.T) {
 	}
 	// Execute the unchanged native staging prefix from the replacement command.
 	// Only its absolute source/output root moves into this private fixture.
-	command := strings.ReplaceAll(producer.BuildCommand[2][:len(staging)], "/src/", root+"/")
-	if output, err := exec.CommandContext(t.Context(), "bash", "-ec", command).CombinedOutput(); err != nil {
+	command := strings.ReplaceAll(producer.BuildCommand[2][:len(staging)], "/src/", `"${NVKR_DOCA_FIXTURE_ROOT}/"`)
+	cmd := exec.CommandContext(t.Context(), "bash", "-ec", command)
+	cmd.Env = append(os.Environ(), "NVKR_DOCA_FIXTURE_ROOT="+root)
+	if output, err := cmd.CombinedOutput(); err != nil {
 		t.Fatalf("private image-file staging: %v: %s", err, output)
 	}
 	stagedFiles := filepath.Join(root, "nvkr-output", "native-image-files")
