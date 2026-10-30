@@ -130,7 +130,7 @@ func buildArtifacts(ctx context.Context, cfg BuildConfig) (BuiltInputs, error) {
 		}
 		env = SetEnv(env, map[string]string{"NVKE_LOCAL_CLONE": clone})
 	}
-	runner := Runner{Env: env, Progress: cfg.Progress, output: cfg.Progress}
+	runner := Runner{Env: env, Progress: cfg.Progress, output: cfg.Progress, privateCaptureStdout: cfg.NVKECommit != ""}
 	// All host checks and fresh-path checks precede the first bootstrap. The
 	// script remains authoritative for exact runtime/toolchain admission.
 	for _, root := range []string{"runs", "laptop-bootstrap", "native-tools/runs", "mac-build", "native-build"} {

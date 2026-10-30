@@ -35,6 +35,14 @@ The six-hour job has bounded setup steps and passes its remaining deadline to
 Go. `TestEndToEnd` reserves two hours inside that deadline for independent owned
 cleanup. Setup refuses a non-hosted/non-AMD64 host or missing KVM.
 
+The Go test prints phase start/end/failure and child process start/exit
+observations. Once a minute, a parent-test heartbeat reports the last started
+phase, its age and how long the public child stream has been idle. That heartbeat
+shows parent liveness only; it does not establish child progress or success.
+Exact-source nightly builds retain machine-command stdout in their bounded
+captures and private logs instead of forwarding large Plan JSON to Actions.
+Command stderr and the final build's ordinary output continue streaming.
+
 Before checkout and builds, the disposable runner removes its unused Android,
 .NET and Haskell SDK directories and records their sizes and remaining disk
 space. Product outputs, Docker and Go stay local and intact. The disk producer's

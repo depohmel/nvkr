@@ -495,10 +495,11 @@ func TestBuildPublicStreamBeyondDiagnosticBound(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, mode := range []string{"public stream", "capture", "private log", "output error"} {
+	for _, mode := range []string{"public stream", "capture", "private capture", "private log", "output error"} {
 		t.Run(mode, func(t *testing.T) {
 			var output bytes.Buffer
 			runner := Runner{Env: []string{"NVKR_SUPPORT_HELPER=oversized"}, output: &output}
+			runner.privateCaptureStdout = mode == "private capture"
 			failure := errors.New("stream write failed")
 			if mode == "private log" {
 				runner.Work = privateTestDir(t)
@@ -514,7 +515,7 @@ func TestBuildPublicStreamBeyondDiagnosticBound(t *testing.T) {
 			args := []string{program, "-test.run=TestSupportHelperProcess"}
 			var captured []byte
 			var err error
-			if mode == "capture" {
+			if mode == "capture" || mode == "private capture" {
 				captured, err = runner.Capture(t.Context(), args, "large", 10*time.Second)
 			} else {
 				err = runner.Run(t.Context(), args, "large", 10*time.Second)
@@ -532,6 +533,9 @@ func TestBuildPublicStreamBeyondDiagnosticBound(t *testing.T) {
 			}
 			if mode == "capture" && (len(captured) != diagnosticLimit || output.Len() != diagnosticLimit) {
 				t.Fatal("public output opt-in bypassed capture bounds")
+			}
+			if mode == "private capture" && (len(captured) != diagnosticLimit || output.Len() != 0) {
+				t.Fatal("private machine output leaked or bypassed capture bounds")
 			}
 			if mode == "private log" {
 				info, err := os.Stat(filepath.Join(runner.Work, "large.log"))
