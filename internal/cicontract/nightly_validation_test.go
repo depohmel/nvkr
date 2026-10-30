@@ -16,6 +16,8 @@ import (
 	"time"
 )
 
+const validationIdleMarker = "e74161ab5b41b89e0f4a6e9dce790664059a6d47"
+
 // Unexpected endpoints fail rather than reaching GitHub. Mutable PR fixtures
 // model changes between admission and the final acceptance check.
 const fakeValidationGitHub = `#!/usr/bin/env bash
@@ -104,6 +106,11 @@ func newValidationFixture(t *testing.T) *nightlyFixture {
 
 func runValidation(t *testing.T, f *nightlyFixture, mode string) (string, int) {
 	t.Helper()
+	return runValidationAtCommit(t, f, mode, nightlySHA)
+}
+
+func runValidationAtCommit(t *testing.T, f *nightlyFixture, mode, sha string) (string, int) {
+	t.Helper()
 	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
 	defer cancel()
 	_, filename, _, ok := runtime.Caller(0)
@@ -114,7 +121,7 @@ func runValidation(t *testing.T, f *nightlyFixture, mode string) (string, int) {
 	if mode == "--approve" {
 		args = append(args, "42")
 	}
-	args = append(args, nightlySHA, f.out)
+	args = append(args, sha, f.out)
 	command := exec.CommandContext(ctx, "bash", args...)
 	command.Env = f.environment
 	output, err := command.CombinedOutput()
@@ -153,7 +160,7 @@ func validationRefUpdates(t *testing.T, f *nightlyFixture) [][]map[string]any {
 
 func assertValidationFailure(t *testing.T, output string, status, want int) {
 	t.Helper()
-	codes := map[int]string{21: "NVKR-E-BUILD-FAILED", 22: "NVKR-E-VERIFY-FAILED", 30: "NVKR-E-UNAVAILABLE", 47: "NVKR-E-IMMUTABLE-VIOLATION", 49: "NVKR-E-UNPINNED-INPUT"}
+	codes := map[int]string{2: "NVKR-E-USAGE", 21: "NVKR-E-BUILD-FAILED", 22: "NVKR-E-VERIFY-FAILED", 30: "NVKR-E-UNAVAILABLE", 47: "NVKR-E-IMMUTABLE-VIOLATION", 49: "NVKR-E-UNPINNED-INPUT"}
 	if status != want || codes[want] == "" || !strings.Contains(output, codes[want]) {
 		t.Fatalf("validation returned %d, want coded refusal %d %s\n%s", status, want, codes[want], output)
 	}
@@ -166,7 +173,7 @@ func TestNightlyValidationPromotesAndTestsOnlyApprovedCandidate(t *testing.T) {
 		t.Fatalf("approved candidate: %d\n%s", status, output)
 	}
 	updates := validationRefUpdates(t, f)
-	if len(updates) != 2 || len(updates[0]) != 2 || updates[0][0]["name"] != "refs/heads/nvkr-validation-lock" || updates[0][0]["beforeOid"] != strings.Repeat("0", 40) || updates[0][0]["afterOid"] != nightlySHA || updates[0][1]["name"] != "refs/heads/nvkr-validation" || updates[0][1]["beforeOid"] != strings.Repeat("c", 40) || updates[0][1]["afterOid"] != nightlySHA || len(updates[1]) != 1 || updates[1][0]["name"] != "refs/heads/nvkr-validation-lock" || updates[1][0]["beforeOid"] != nightlySHA || updates[1][0]["afterOid"] != strings.Repeat("0", 40) {
+	if len(updates) != 2 || len(updates[0]) != 2 || updates[0][0]["name"] != "refs/heads/nvkr-validation-lock" || updates[0][0]["beforeOid"] != strings.Repeat("0", 40) || updates[0][0]["afterOid"] != nightlySHA || updates[0][0]["force"] != true || updates[0][1]["name"] != "refs/heads/nvkr-validation" || updates[0][1]["beforeOid"] != strings.Repeat("c", 40) || updates[0][1]["afterOid"] != nightlySHA || len(updates[1]) != 1 || updates[1][0]["name"] != "refs/heads/nvkr-validation-lock" || updates[1][0]["beforeOid"] != nightlySHA || updates[1][0]["afterOid"] != validationIdleMarker || updates[1][0]["force"] != true {
 		t.Fatalf("promotion or release escaped leased candidate refs: %+v", updates)
 	}
 	var request struct {
@@ -176,6 +183,83 @@ func TestNightlyValidationPromotesAndTestsOnlyApprovedCandidate(t *testing.T) {
 	raw, err := os.ReadFile(filepath.Join(f.root, "dispatched.json"))
 	if err != nil || json.Unmarshal(raw, &request) != nil || request.Ref != "nvkr-validation" || request.Inputs["candidate_sha"] != nightlySHA || request.Inputs["candidate_pr"] != "42" || request.Inputs["tenant_checks"] != true || request.Inputs["profile"] != "nvke-nightly-arm64" {
 		t.Fatalf("dispatch lost approved candidate or full tenant selection: %s (%v)", raw, err)
+	}
+}
+
+func TestNightlyValidationReusesExactIdleLockMarker(t *testing.T) {
+	f := newValidationFixture(t)
+	fixtureJSON(t, filepath.Join(f.root, "refs.json"), []map[string]any{
+		{"ref": "refs/heads/nvkr-validation", "object": map[string]string{"type": "commit", "sha": strings.Repeat("c", 40)}},
+		{"ref": "refs/heads/nvkr-validation-lock", "object": map[string]string{"type": "commit", "sha": validationIdleMarker}},
+		{"ref": "refs/heads/nvkr-validation-lock-other", "object": map[string]string{"type": "commit", "sha": nightlySHA}},
+	})
+	output, status := runValidation(t, f, "--approve")
+	if status != 0 {
+		t.Fatalf("idle marker reuse failed: %d\n%s", status, output)
+	}
+	updates := validationRefUpdates(t, f)
+	if len(updates) != 2 || len(updates[0]) != 2 || updates[0][0]["beforeOid"] != validationIdleMarker || updates[0][0]["afterOid"] != nightlySHA || updates[0][0]["force"] != true || updates[1][0]["afterOid"] != validationIdleMarker {
+		t.Fatalf("idle marker was not leased and restored with exact CAS: %+v", updates)
+	}
+}
+
+func TestNightlyValidationRejectsHeldOrMalformedLockBeforeMutation(t *testing.T) {
+	for _, scenario := range []string{"busy", "duplicate idle", "invalid SHA", "wrong object type", "missing object", "invalid response shape"} {
+		t.Run(scenario, func(t *testing.T) {
+			f := newValidationFixture(t)
+			object := map[string]string{"type": "commit", "sha": nightlySHA}
+			ref := map[string]any{"ref": "refs/heads/nvkr-validation-lock", "object": object}
+			refs := []map[string]any{ref}
+			switch scenario {
+			case "duplicate idle":
+				object["sha"] = validationIdleMarker
+				refs = append(refs, ref)
+			case "invalid SHA":
+				object["sha"] = "invalid"
+			case "wrong object type":
+				object["sha"], object["type"] = validationIdleMarker, "tag"
+			case "missing object":
+				delete(ref, "object")
+			}
+			if scenario == "invalid response shape" {
+				object["sha"] = validationIdleMarker
+				fixtureJSON(t, filepath.Join(f.root, "refs.json"), map[string]any{"unexpected": ref})
+			} else {
+				fixtureJSON(t, filepath.Join(f.root, "refs.json"), refs)
+			}
+			output, status := runValidation(t, f, "--approve")
+			assertValidationFailure(t, output, status, 30)
+			for _, call := range f.calls(t) {
+				if strings.Contains(call, "graphql") || strings.HasPrefix(call, "POST ") {
+					t.Fatalf("held/malformed lock performed mutation: %v", f.calls(t))
+				}
+			}
+		})
+	}
+}
+
+func TestNightlyValidationReservedMarkerIsNotCandidate(t *testing.T) {
+	f := newValidationFixture(t)
+	output, status := runValidationAtCommit(t, f, "--approve", validationIdleMarker)
+	assertValidationFailure(t, output, status, 2)
+	if len(f.calls(t)) != 0 || len(validationRefUpdates(t, f)) != 0 {
+		t.Fatal("reserved marker approval reached the provider")
+	}
+}
+
+func TestNightlyValidationRecoveryRestoresPersistentIdleMarker(t *testing.T) {
+	for _, sha := range []string{nightlySHA, validationIdleMarker} {
+		t.Run(sha, func(t *testing.T) {
+			f := newValidationFixture(t)
+			output, status := runValidationAtCommit(t, f, "--unlock", sha)
+			if status != 0 {
+				t.Fatalf("idle recovery failed: %d\n%s", status, output)
+			}
+			updates := validationRefUpdates(t, f)
+			if len(updates) != 1 || len(updates[0]) != 1 || updates[0][0]["name"] != "refs/heads/nvkr-validation-lock" || updates[0][0]["beforeOid"] != sha || updates[0][0]["afterOid"] != validationIdleMarker || updates[0][0]["force"] != true {
+				t.Fatalf("recovery did not CAS only the lock to its idle marker: %+v", updates)
+			}
+		})
 	}
 }
 

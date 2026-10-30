@@ -3561,7 +3561,7 @@ at the user's explicit request.
 
 The pre-merge path reuses the same coordinator and generated producer on the
 exact `nvkr-validation` branch. The operator helper approves one exact current
-PR/mirror commit, atomically leases the candidate and lock refs, dispatches and
+PR/mirror commit, atomically leases the candidate and persistent lock refs, dispatches and
 joins only the returned coordinator ID, and requires successful build/runtime
 jobs plus the branch/commit-bound runtime and tenant verdict after cleanup. The
 consumer narrows signer verification to that actual workflow ref, preserving the
@@ -3572,6 +3572,10 @@ not a recorded successful hosted run. Branch-write restrictions, exact ARC/relea
 environment admission, private package grants and any required full-E2E GitHub
 status remain external setup, unverified by local contract tests. No provider
 setting or package access change is established by these source changes.
+Lock release/recovery uses an exact CAS back to an existing Git-checkpoint idle
+marker, never ref deletion. This allows both automation refs to remain undeletable
+while limiting creation/force updates to the operator. The marker is concurrency
+state, outside artifact and release authority.
 
 The archive correction selects source-built tarball assets in executable bundles
 through exact resolved-component and producer/output membership. Helm and disk

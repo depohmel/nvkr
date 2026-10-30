@@ -62,6 +62,10 @@ automation-owned lock and replaces the candidate branch only if its previously
 observed commit still matches. It does not update `main`, the PR branch or the
 mirror. Both candidate refs are reserved for this workflow, not human development.
 Existing candidate runs, including waiting deployments, prevent another promotion.
+The persistent lock's idle value is the existing Git checkpoint
+`e74161ab5b41b89e0f4a6e9dce790664059a6d47`. That value is only a concurrency
+marker; it grants no artifact or release authority. Any other value holds the
+lease. The first use may create an absent lock, and no operation deletes either ref.
 
 The command dispatches the existing nightly at that branch and joins only the
 exact returned run ID. It requires successful build and runtime jobs, an exact
@@ -86,14 +90,19 @@ Recovery requires the previous operator process and its requests to have ended;
 investigate any ambiguous dispatch before using it. An idle scan alone cannot
 prove that a delayed request will never surface. Never recover automatically as
 part of retrying a failed command. Recovery refuses active or unreadable candidate
-runs and removes only the lock
-whose commit matches the supplied lease. It does not move the candidate branch.
+runs and resets only the matching held lock to its idle marker through an exact
+compare-and-swap. It does not move the candidate branch or delete a ref.
+The candidate SHA is not a unique process-attempt token: recovery followed by a
+retry of that same SHA cannot fence a revived older invocation. Terminate the
+previous invocation before recovery; never recover concurrently with it.
 
 One-time repository setup is required before the first invocation:
 
-- Reserve `nvkr-validation` and `nvkr-validation-lock` for the authorized operator;
-  restrict who can create, update and delete those refs. Review the exact commit
-  before permitting privileged candidate code, including any push-triggered code.
+- Reserve `nvkr-validation` and `nvkr-validation-lock` for the authorized operator.
+  Restrict creation and updates to that operator, admit its force updates, enforce
+  the restrictions for administrators, and disable deletions for both refs.
+  Review the exact commit before permitting privileged candidate code, including
+  any push-triggered code. No broad force-push or deletion grant is required.
 - Add the exact `nvkr-validation` branch to the `nvkr-arc` and `nvkr-release`
   deployment policies, and grant the existing private storage and runner access.
   Do not widen either policy to arbitrary PR branches.

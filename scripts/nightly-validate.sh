@@ -21,6 +21,11 @@ else
 fi
 [[ (($mode == --unlock && $pr == 0) || $pr =~ ^[1-9][0-9]*$) && $sha =~ ^[0-9a-f]{40}$ ]] ||
   fail NVKR-E-USAGE 'approval must name one PR and its full lowercase commit SHA' 2
+# This immutable checkpoint is only an idle concurrency marker. It grants no
+# artifact, source-selection, publication or validation authority.
+idle_marker=e74161ab5b41b89e0f4a6e9dce790664059a6d47
+[[ $mode != --approve || $sha != "$idle_marker" ]] ||
+  fail NVKR-E-USAGE 'the reserved idle marker cannot be approved as a candidate' 2
 [[ $out == /* ]] || fail NVKR-E-USAGE 'validation records require an absolute output directory' 2
 for command in gh jq timeout; do
   command -v "$command" >/dev/null || fail NVKR-E-ENGINE-CAPABILITY "missing $command" 29
@@ -73,8 +78,8 @@ refs_update() {
 }
 release_lock() {
   local updates
-  updates=$(jq -nc --arg sha "$sha" --arg zero "$zero" --arg lock "refs/heads/$lock" \
-    '[{name:$lock,beforeOid:$sha,afterOid:$zero}]')
+  updates=$(jq -nc --arg sha "$sha" --arg idle "$idle_marker" --arg lock "refs/heads/$lock" \
+    '[{name:$lock,beforeOid:$sha,afterOid:$idle,force:true}]')
   refs_update "$updates"
 }
 cleanup() {
@@ -137,15 +142,22 @@ for environment in nvkr-arc nvkr-release; do
     fail NVKR-E-ENGINE-CAPABILITY "one-time setup missing: $environment must explicitly admit $branch" 29
 done
 api "repos/$repo/git/matching-refs/heads/$branch" >"$out/refs.json"
+lock_before=$(jq -er --arg ref "refs/heads/$lock" --arg idle "$idle_marker" --arg zero "$zero" '
+  if type != "array" then error("invalid matching reference response") else . end |
+  [.[] | select(.ref == $ref)] |
+  if length == 0 then $zero
+  elif length == 1 and .[0].object.type == "commit" and .[0].object.sha == $idle then $idle
+  else error("validation lock is held or malformed") end' "$out/refs.json") ||
+  fail NVKR-E-UNAVAILABLE 'validation lock is held or malformed; do not move the candidate' 30
 before=$(jq -er --arg ref "refs/heads/$branch" --arg zero "$zero" '
   [.[] | select(.ref == $ref)] |
   if length == 0 then $zero
   elif length == 1 and .[0].object.type == "commit" then .[0].object.sha
   else error("ambiguous candidate reference") end' "$out/refs.json")
 check_pr
-updates=$(jq -nc --arg sha "$sha" --arg before "$before" --arg zero "$zero" \
+updates=$(jq -nc --arg sha "$sha" --arg before "$before" --arg lock_before "$lock_before" \
   --arg branch "refs/heads/$branch" --arg lock "refs/heads/$lock" '
-  [{name:$lock,beforeOid:$zero,afterOid:$sha},
+  [{name:$lock,beforeOid:$lock_before,afterOid:$sha,force:true},
    {name:$branch,beforeOid:$before,afterOid:$sha,force:true}]')
 # Atomic compare-and-swap acquires the operator lock and promotes only the
 # automation-owned candidate ref. Never update main, a PR branch or its mirror.

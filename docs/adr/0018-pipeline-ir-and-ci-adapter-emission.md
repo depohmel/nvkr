@@ -547,6 +547,11 @@ prefix; formal release inputs and identity remain unchanged. Required ref-write
 restrictions, exact protected-environment branch admission and access grants are
 external prerequisites, not claims established by the operator helper. Recovery
 cannot release the leased lock while candidate runs remain active or unreadable.
+The persistent lock returns to its fixed existing Git-checkpoint idle marker
+through exact compare-and-swap; acquisition admits only that marker or an absent
+first-use ref. Neither ref is deleted, so branch protections can disable deletion
+and admit creation/force updates only for the operator. The marker grants no
+artifact or release authority.
 Pre-merge acceptance requires completed build/runtime jobs and the exact full
 runtime/tenant/cleanup verdict, and rechecks the current PR head. This manual
 evidence does not itself install a required GitHub status check.
