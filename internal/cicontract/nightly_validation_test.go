@@ -51,7 +51,6 @@ while [[ $# -gt 0 ]]; do
   esac
   shift
 done
-[[ $api_version == true ]]
 printf '%s %s\n' "$method" "$endpoint" >>"$FAKE_GH_ROOT/calls"
 case "$method $endpoint" in
   'GET repos/dsx-ai-factory/nvkr') cat "$FAKE_GH_ROOT/repository.json" ;;
@@ -107,6 +106,7 @@ case "$method $endpoint" in
     jq -e '.[] | select(.ref == "refs/heads/nvkr-validation")' "$FAKE_GH_ROOT/refs.json" ;;
   'POST repos/dsx-ai-factory/nvkr/actions/workflows/nvkr-nightly.yml/dispatches')
     # This API version always returns run details; return_run_details was removed.
+    [[ $api_version == true ]]
     jq -e 'keys == ["inputs","ref"]' "$input" >/dev/null
     cp "$input" "$FAKE_GH_ROOT/dispatched.json"
     [[ ${FAKE_DISPATCH_FAILURE:-false} != true ]] || exit 17

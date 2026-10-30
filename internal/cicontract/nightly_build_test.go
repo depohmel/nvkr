@@ -38,7 +38,6 @@ for argument in "$@"; do
   if [[ $argument == 'X-GitHub-Api-Version: 2026-03-10' ]]; then api_version=true; fi
   if [[ $argument == repos/* ]]; then endpoint=$argument; fi
 done
-[[ $api_version == true ]]
 printf '%s %s\n' "$method" "$endpoint" >>"$FAKE_GH_ROOT/calls"
 block_request() {
   trap '' INT TERM
@@ -54,6 +53,7 @@ case "$method $endpoint" in
   'GET repos/example/nvkr/actions/workflows/nvkr-run-oss.yml') cat "$FAKE_GH_ROOT/workflow.json" ;;
   'POST repos/example/nvkr/actions/workflows/nvkr-run-oss.yml/dispatches')
     # This API version always returns run details; return_run_details was removed.
+    [[ $api_version == true ]]
     jq -e 'keys == ["inputs","ref"]' "$input" >/dev/null
     if [[ ${FAKE_GH_BLOCK:-} == dispatch ]]; then block_request; fi
     if [[ $FAKE_DISPATCH_FAILURE == true ]]; then exit 17; fi
