@@ -185,8 +185,10 @@ func nativeBootstrapTerminalFailure(source *nativeInstallerSelection, raw []byte
 		if report != "" || len(line) > 4096 {
 			return ""
 		}
+		// kubeadm adds "error: " before its phase error; the agent retains
+		// that line when adding its own "kubeadm init failed: " prefix.
 		if !strings.Contains(line, "failed to initialize Kubernetes control plane:") ||
-			!strings.Contains(line, "kubeadm init failed: error execution phase ") {
+			!strings.Contains(line, "kubeadm init failed: error: error execution phase ") {
 			continue
 		}
 		// Quoting prevents terminal controls and Actions command injection;

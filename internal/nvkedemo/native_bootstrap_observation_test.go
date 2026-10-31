@@ -158,7 +158,7 @@ printf '%s\n' '{"items":[{"metadata":{"namespace":"default","name":"PRIVATE_POD"
 }
 
 func TestNativeBootstrapTerminalReportRequiresReviewedSourceAndFailure(t *testing.T) {
-	const line = "Error: failed to initialize Kubernetes control plane: kubeadm init failed: error execution phase wait-control-plane: cannot obtain client without bootstrap (credential <redacted>)"
+	const line = "Error: failed to initialize Kubernetes control plane: kubeadm init failed: error: error execution phase wait-control-plane: cannot obtain client without bootstrap (credential <redacted>)"
 	source := &nativeInstallerSelection{commit: reviewedBootstrapTerminalSource, terminalCLICommit: reviewedBootstrapTerminalSource, terminalAgentCommit: reviewedBootstrapTerminalSource}
 	for _, tc := range []struct {
 		name   string
@@ -173,6 +173,7 @@ func TestNativeBootstrapTerminalReportRequiresReviewedSourceAndFailure(t *testin
 		{"patched agent", &nativeInstallerSelection{commit: reviewedBootstrapTerminalSource, terminalCLICommit: reviewedBootstrapTerminalSource}, line, false},
 		{"other source", &nativeInstallerSelection{commit: strings.Repeat("a", 40)}, line, false},
 		{"other error", source, "Error: PRIVATE_TOKEN", false},
+		{"incorrect simplified fixture", source, strings.Replace(line, "error: error execution phase", "error execution phase", 1), false},
 		{"arbitrary stderr", source, "PRIVATE_TOKEN", false},
 		{"JSON attribute", source, `{"msg":"PRIVATE","error":` + strconv.Quote(line) + `}`, false},
 		{"oversized report", source, line + strings.Repeat("x", 4096), false},
@@ -197,7 +198,7 @@ func TestNativeBootstrapTerminalReportRequiresReviewedSourceAndFailure(t *testin
 }
 
 func TestRunNativeBootstrapReportsReviewedFailureOnlyAfterFailedJoin(t *testing.T) {
-	const report = "Error: failed to initialize Kubernetes control plane: kubeadm init failed: error execution phase wait-control-plane: cannot obtain client without bootstrap"
+	const report = "Error: failed to initialize Kubernetes control plane: kubeadm init failed: error: error execution phase wait-control-plane: cannot obtain client without bootstrap"
 	for _, mode := range []string{"success", "failure", "disabled", "canceled"} {
 		t.Run(mode, func(t *testing.T) {
 			root := privateTestDir(t)
