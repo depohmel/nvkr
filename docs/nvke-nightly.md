@@ -80,6 +80,18 @@ nested activity labels and Kubernetes init-phase, preflight-check and wait label
 from private condition messages and already retained owned serial snapshots. Raw
 error details remain private; these literal observations may be absent for unknown
 failures. Unknown failures stay unclassified.
+For the reviewed NVKE source `ca3f7c025c1474d9b0b9a19a830a3006168c6de7`, a
+joined failed command may also present its bounded kubeadm terminal error only
+when a manual dispatch explicitly sets the temporary
+`debug_redacted_kubeadm_error` input. Its default is false; scheduled runs retain
+private errors. This temporary path will be removed after debugging. NVKE's
+[existing operator report](https://github.com/dsx-ai-factory/nvke/blob/ca3f7c025c1474d9b0b9a19a830a3006168c6de7/cli/internal/nvkectl/run.go#L100)
+masks registered credentials; the agent also masks init credentials before
+constructing that error. This is not a general secret detector or anonymizer:
+names, addresses and paths can appear in that report. Terminal controls are
+quoted. Other source commits retain the closed observations until their reporting
+boundary is reviewed; this does not change nightly selection of latest NVKE main.
+Stdout, arbitrary stderr, JSON attributes and raw console files remain private.
 The Go E2E presenter queues these observations without blocking cleanup; it may
 drop them under backpressure. Plain writers retain bootstrap diagnostics privately.
 Ordinary diagnostic loss preserves the original failure; an unjoined observation

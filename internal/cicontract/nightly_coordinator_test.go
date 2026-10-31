@@ -51,6 +51,19 @@ func TestNightlyUsesOnlyHostedBuildAndGoE2E(t *testing.T) {
 	if len(workflow.On) != 2 || workflow.On["workflow_dispatch"] == nil || len(workflow.Jobs) != 1 || !reflect.DeepEqual(workflow.Permissions, map[string]string{"contents": "read"}) {
 		t.Fatal("nightly must retain ordinary manual dispatch and read-only permissions")
 	}
+	var dispatch struct {
+		Inputs map[string]struct {
+			Type    string
+			Default *bool
+		}
+	}
+	if err := json.Unmarshal(workflow.On["workflow_dispatch"], &dispatch); err != nil {
+		t.Fatal(err)
+	}
+	debug := dispatch.Inputs["debug_redacted_kubeadm_error"]
+	if debug.Type != "boolean" || debug.Default == nil || *debug.Default {
+		t.Fatal("temporary redacted terminal output must require explicit boolean opt-in")
+	}
 	if workflow.Concurrency.Group != "nvkr-nightly-${{ github.ref }}" || workflow.Concurrency.CancelInProgress == nil || *workflow.Concurrency.CancelInProgress {
 		t.Fatal("nightly must serialize each branch without canceling its owned cleanup")
 	}
@@ -105,6 +118,9 @@ func TestNightlyUsesOnlyHostedBuildAndGoE2E(t *testing.T) {
 					strings.Contains(step.Run, "set -euo pipefail") && strings.Contains(step.Run, "(( remaining > 125 * 60 ))") &&
 					guardAt >= 0 && guardAt < strings.Index(step.Run, "remaining=$(( NVKR_JOB_DEADLINE")
 				tenant = step.Env["NVKR_NVKE_E2E_TENANT"] == "1"
+				if step.Env["NVKR_NVKE_E2E_DEBUG_REDACTED_ERROR"] != "${{ github.event_name == 'workflow_dispatch' && inputs.debug_redacted_kubeadm_error && '1' || '0' }}" {
+					t.Fatal("scheduled runs must keep terminal errors private")
+				}
 			}
 			if strings.HasPrefix(step.Uses, "actions/setup-go@") && step.With["cache"] != false {
 				t.Fatal("nightly must not publish build outputs through the Go Actions cache")

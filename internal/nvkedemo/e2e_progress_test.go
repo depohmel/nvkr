@@ -26,6 +26,8 @@ type nativeE2EProgress struct {
 	lastOutput   time.Time
 	events       chan ProgressEvent
 	observations chan string
+	// Set once by TestEndToEnd before starting any build or deployment.
+	terminalDebug bool
 }
 
 type nativeHeartbeatWriter struct {
@@ -181,6 +183,8 @@ func (p *nativeE2EProgress) Report(event ProgressEvent) {
 		}
 	}
 }
+
+func (p *nativeE2EProgress) nativeBootstrapTerminalEnabled() bool { return p.terminalDebug }
 
 func (p *nativeE2EProgress) observeNativeBootstrap(text string) {
 	if len(text) == 0 || len(text) > 32<<10 {
