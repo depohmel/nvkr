@@ -51,7 +51,12 @@ its owned network, then rejected NVKE's changed MachineImage image-URL placehold
 Its owned cleanup completed and final diagnostics retained runner ownership of
 KVM with mode `0660`. Boot projection now admits exactly one retained or current
 source placeholder, with both source architecture fixtures covered by regression
-tests. Full site and tenant E2E acceptance remains unverified.
+tests. [Run 41150544256](https://github.com/depohmel/nvkr/actions/runs/41150544256)
+then completed the fresh build and the real site VM's cloud-init, prepared Lima
+and imported the controller/provider images. The source bootstrap command exited
+1; the public log did not expose its underlying cause. VM, backend and network
+cleanup completed. Host capacity samples do not establish the Lima guest's capacity.
+Full site and tenant E2E acceptance remains unverified.
 
 The Go test prints phase start/end/failure and child process start/exit
 observations. Once a minute, a parent-test heartbeat reports the last started
@@ -59,7 +64,17 @@ phase, its age and how long the public child stream has been idle. That heartbea
 shows parent liveness only; it does not establish child progress or success.
 Exact-source nightly builds retain machine-command stdout in their bounded
 captures and private logs instead of forwarding large Plan JSON to Actions.
-Command stderr and the final build's ordinary output continue streaming.
+Build command stderr and the final build's ordinary output continue streaming.
+Bootstrap stdout, arbitrary stderr and raw diagnostic files stay private. Its
+source-owned JSON log records are projected into bounded, closed phase/outcome
+values and static stage labels after the subprocess joins. A failed bootstrap also
+observes the temporary backend's guest memory/disk and an anonymized pod table
+before cleanup, through existing bounded subprocess and presentation owners.
+The Go E2E presenter queues these observations without blocking cleanup; it may
+drop them under backpressure. Plain writers retain bootstrap diagnostics privately.
+Ordinary diagnostic loss preserves the original failure; an unjoined observation
+still requires retaining dependent resources. These observations grant no readiness
+or qualification acceptance.
 
 The CI resource wrapper samples host memory/disk, cgroup memory events and Docker
 usage while the Go test runs, with a 15-second pause between samples. It records

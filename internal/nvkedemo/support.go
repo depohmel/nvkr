@@ -74,7 +74,8 @@ type Runner struct {
 	// commands keep potentially sensitive deployment diagnostics private.
 	output io.Writer
 	// Machine stdout remains captured/private while stderr and uncaptured build
-	// output still stream. Opted in by exact-source nightly builds only.
+	// output still stream. Used by exact-source builds and private bootstrap
+	// stderr capture.
 	privateCaptureStdout bool
 	// Opted in only for the directly executed final nvkr local Run. Bootstrap
 	// shells and every source/utility command receive no inherited activity FD.
@@ -703,7 +704,10 @@ func (r Runner) start(ctx context.Context, args []string, phase string, capture,
 		}
 		return nil, &CommandError{Phase: phase, ExitCode: -1, Cause: err}
 	}
-	if r.Progress != nil {
+	// The owned bootstrap presenter already receives typed phase events. A
+	// duplicate synchronous write could delay cleanup behind its blocked sink.
+	_, ownedPresenter := r.Progress.(nativeBootstrapObserver)
+	if r.Progress != nil && !ownedPresenter {
 		_, _ = fmt.Fprintf(r.Progress, "Demo phase: %s\n", phase)
 	}
 	var activityWriter *os.File
