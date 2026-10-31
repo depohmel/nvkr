@@ -51,12 +51,13 @@ its owned network, then rejected NVKE's changed MachineImage image-URL placehold
 Its owned cleanup completed and final diagnostics retained runner ownership of
 KVM with mode `0660`. Boot projection now admits exactly one retained or current
 source placeholder, with both source architecture fixtures covered by regression
-tests. [Run 41150544256](https://github.com/depohmel/nvkr/actions/runs/41150544256)
-then completed the fresh build and the real site VM's cloud-init, prepared Lima
-and imported the controller/provider images. The source bootstrap command exited
-1; the public log did not expose its underlying cause. VM, backend and network
-cleanup completed. Host capacity samples do not establish the Lima guest's capacity.
-Full site and tenant E2E acceptance remains unverified.
+tests. [Run 41159653883](https://github.com/depohmel/nvkr/actions/runs/41159653883)
+completed the fresh build, real site VM cloud-init, kind bootstrap and healthy
+controller deployment. NVKE's `site_cluster` phase then failed while waiting for
+provisioning. The bootstrap guest had 3,551 MiB available memory and 10,667 MiB
+free disk; sampled bootstrap pods were Ready apart from one completed job.
+Owned VM/backend/network cleanup completed and Actions artifact count was zero.
+The underlying provisioning error and full site/tenant acceptance remain unverified.
 
 The Go test prints phase start/end/failure and child process start/exit
 observations. Once a minute, a parent-test heartbeat reports the last started
@@ -67,9 +68,14 @@ captures and private logs instead of forwarding large Plan JSON to Actions.
 Build command stderr and the final build's ordinary output continue streaming.
 Bootstrap stdout, arbitrary stderr and raw diagnostic files stay private. Its
 source-owned JSON log records are projected into bounded, closed phase/outcome
-values and static stage labels after the subprocess joins. A failed bootstrap also
+values, closed cluster states and static stage labels after the subprocess joins. A failed bootstrap also
 observes the temporary backend's guest memory/disk and an anonymized pod table
 before cleanup, through existing bounded subprocess and presentation owners.
+Cluster and node conditions are read through NVKE's existing Service-proxy route
+using the owned bootstrap kubeconfig. Only selected condition names/statuses and
+static source failure-context labels are presented; identities and raw messages
+remain private. Context labels describe literal source phrases, not a decoded
+Temporal error or proven root cause. Unknown failures stay unclassified.
 The Go E2E presenter queues these observations without blocking cleanup; it may
 drop them under backpressure. Plain writers retain bootstrap diagnostics privately.
 Ordinary diagnostic loss preserves the original failure; an unjoined observation

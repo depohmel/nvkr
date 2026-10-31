@@ -39,11 +39,19 @@ func nativeBootstrapLogSummary(raw []byte) string {
 			Operation string `json:"operation"`
 			Phase     string `json:"phase"`
 			Outcome   string `json:"outcome"`
+			Status    string `json:"status"`
 		}
 		if json.Unmarshal(scanner.Bytes(), &event) != nil || event.Operation != "bootstrap_site" {
 			continue
 		}
 		switch event.Message {
+		case "cluster state":
+			switch event.Status {
+			case "Deleting", "UpdateFailed", "Updating", "Upgrading", "Recycling", "Provisioning", "Provisioned", "ProvisioningFailed", "Unknown":
+				fmt.Fprintf(&result, "Bootstrap cluster state observation: %s\n", event.Status)
+			default:
+				continue
+			}
 		case "phase finished":
 			switch event.Phase {
 			case "preflight", "bootstrap_cluster", "engine_deploy", "site_cluster", "finish":
@@ -119,6 +127,18 @@ func (s *nativeSiteAttempt) observeBootstrapFailure(ctx context.Context, runner 
 	path := filepath.Join(private.Work, "bootstrap.kubeconfig")
 	if err != nil || privateWrite(path, config) != nil {
 		return cause
+	}
+	// NVKE WaitReady already uses this exact proxy on the owned bootstrap
+	// cluster. Read through its captured kubeconfig, not an unrelated host port.
+	for _, collection := range []string{"clusters", "nodes"} {
+		endpoint := "/api/v1/namespaces/nvke-controller/services/nvke-controller:http/proxy/api/" + collection
+		raw, err := private.Capture(bounded, []string{filepath.Join(s.assets.HostTools, "kubectl"), "--kubeconfig", path, "--request-timeout=5s", "get", "--raw", endpoint}, "bootstrap-"+collection, 5*time.Second)
+		if errors.Is(err, ErrUnjoined) {
+			return errors.Join(cause, err)
+		}
+		if err == nil {
+			reportNativeBootstrapObservation(runner, nativeBootstrapConditionSummary(collection, raw))
+		}
 	}
 	raw, err := private.Capture(bounded, []string{filepath.Join(s.assets.HostTools, "kubectl"), "--kubeconfig", path, "--request-timeout=5s", "get", "pods", "--all-namespaces", "-o", "json"}, "bootstrap-pods", 5*time.Second)
 	if errors.Is(err, ErrUnjoined) {

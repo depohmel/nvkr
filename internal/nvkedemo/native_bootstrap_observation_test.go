@@ -25,6 +25,8 @@ func TestNativeBootstrapLogSummaryPublishesOnlySourceEnums(t *testing.T) {
 	const phase = `{"operation":"bootstrap_site","msg":"phase finished","phase":"engine_deploy","outcome":"failed","err":"PRIVATE_TOKEN"}`
 	for _, tc := range []struct{ name, raw, want string }{
 		{"source records", stage + "\n" + phase, "Bootstrap stage observation: installing postgres\nBootstrap phase observation: engine_deploy failed\n"},
+		{"cluster state", `{"operation":"bootstrap_site","msg":"cluster state","status":"ProvisioningFailed","cluster":"PRIVATE_NAME"}`, "Bootstrap cluster state observation: ProvisioningFailed\n"},
+		{"unknown cluster state", `{"operation":"bootstrap_site","msg":"cluster state","status":"PRIVATE_STATE"}`, ""},
 		{"arbitrary output", "PRIVATE_CONFIG\nPRIVATE_ERROR", ""},
 		{"unknown phase", strings.ReplaceAll(phase, "engine_deploy", "PRIVATE_PHASE"), ""},
 		{"unknown outcome", strings.ReplaceAll(phase, "failed", "PRIVATE_OUTCOME"), ""},
@@ -106,6 +108,14 @@ printf 'capacity-sample\n'
 			writeTenantFixture(t, filepath.Join(root, "kind"), []byte("#!/bin/sh\nprintf 'PRIVATE_KUBECONFIG\\n'\n"), 0o700)
 			writeTenantFixture(t, filepath.Join(root, "kubectl"), []byte(`#!/bin/sh
 if test "$MODE" = 'read failure'; then exit 9; fi
+case "$*" in
+ *"get --raw /api/v1/namespaces/nvke-controller/services/nvke-controller:http/proxy/api/clusters")
+  printf '%s\n' '{"clusters":[{"name":"PRIVATE_CLUSTER","conditions":{"provisioning":{"status":"False","message":"Workflow failed: failed to resolve the CNI install mode: PRIVATE_TOKEN"}}}]}'
+  exit 0;;
+ *"get --raw /api/v1/namespaces/nvke-controller/services/nvke-controller:http/proxy/api/nodes")
+  printf '%s\n' '{"nodes":[{"name":"PRIVATE_NODE","conditions":{"readyToJoin":{"status":"True"}}}]}'
+  exit 0;;
+esac
 printf '%s\n' '{"items":[{"metadata":{"namespace":"default","name":"PRIVATE_POD"},"spec":{"secret":"PRIVATE_SECRET"},"status":{"phase":"Pending","containerStatuses":[{"ready":false,"restartCount":0}]}}]}'
 `), 0o700)
 			var progress bootstrapObservationRecorder
@@ -130,7 +140,7 @@ printf '%s\n' '{"items":[{"metadata":{"namespace":"default","name":"PRIVATE_POD"
 			if strings.Contains(progress.String(), "PRIVATE_") {
 				t.Fatalf("private fields escaped: %q", progress.String())
 			}
-			if mode == "observed" && (!strings.Contains(progress.String(), "capacity-sample") || !strings.Contains(progress.String(), "pod-001  Pending  0/1")) {
+			if mode == "observed" && (!strings.Contains(progress.String(), "capacity-sample") || !strings.Contains(progress.String(), "pod-001  Pending  0/1") || !strings.Contains(progress.String(), "clusters[1] provisioning=False") || !strings.Contains(progress.String(), "nodes[1] readyToJoin=True") || !strings.Contains(progress.String(), "Bootstrap source failure context: cni-mode")) {
 				t.Fatalf("bounded observations missing: %q", progress.String())
 			}
 			if mode != "observed" && mode != "read failure" && progress.Len() != 0 {
