@@ -61,3 +61,64 @@ func TestNativeBootstrapFailureContextNeverReturnsRawDetails(t *testing.T) {
 		})
 	}
 }
+
+func TestNativeBootstrapInitializationObservationsKeepDetailsPrivate(t *testing.T) {
+	const prefix = "Workflow failed: failed to initialize Kubernetes control plane: "
+	for _, tc := range []struct{ name, message, want string }{
+		{"agent status", prefix + "failed to get kubeadm status: PRIVATE_TOKEN", "Bootstrap initialization observation: agent-status\n"},
+		{"init RPC", prefix + "failed to execute kubeadm init on node PRIVATE_NAME: PRIVATE_TOKEN", "Bootstrap initialization observation: init-rpc\n"},
+		{"kubelet failure", prefix + "kubeadm init failed: error execution phase wait-control-plane: failed while waiting for the kubelet to start PRIVATE_TOKEN", "Bootstrap initialization observation: kubeadm-command\nBootstrap kubeadm phase observation: wait-control-plane\nBootstrap kubeadm wait observation: kubelet-start-wait\n"},
+		{"control plane failure", prefix + "kubeadm init failed: error execution phase wait-control-plane: failed while waiting for the control plane to start PRIVATE_TOKEN", "Bootstrap initialization observation: kubeadm-command\nBootstrap kubeadm phase observation: wait-control-plane\nBootstrap kubeadm wait observation: control-plane-start-wait\n"},
+		{"legacy CNI", prefix + "CNI install failed: PRIVATE_TOKEN", "Bootstrap initialization observation: legacy-cni\n"},
+		{"unclassified", prefix + "PRIVATE_UNKNOWN_FAILURE", ""},
+		{"ordinary condition", "failed to initialize Kubernetes control plane: PRIVATE_TOKEN", ""},
+		{"other phase", "Workflow failed: failed to install cluster networking: kubeadm init failed: PRIVATE_TOKEN", ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := nativeBootstrapInitializationSummary(tc.message); got != tc.want || strings.Contains(got, "PRIVATE_") {
+				t.Fatalf("unsafe or incorrect observation: %q", got)
+			}
+		})
+	}
+}
+
+func TestNativeBootstrapKubeadmPhasesKeepConsolePrivate(t *testing.T) {
+	for _, phase := range []string{
+		"preflight", "certs", "kubeconfig", "etcd", "control-plane", "kubelet-start",
+		"wait-control-plane", "upload-config", "upload-certs", "mark-control-plane",
+		"bootstrap-token", "kubelet-finalize", "addon", "show-join-command",
+	} {
+		for _, suffix := range []string{": PRIVATE_TOKEN", "/PRIVATE_CHILD: PRIVATE_TOKEN"} {
+			t.Run(phase+suffix, func(t *testing.T) {
+				console := "PRIVATE_REQUEST PRIVATE_SECRET\nerror execution phase " + phase + suffix
+				want := "Bootstrap kubeadm phase observation: " + phase + "\n"
+				if got := nativeBootstrapKubeadmSummary(console); got != want || strings.Contains(got, "PRIVATE_") {
+					t.Fatalf("unsafe or incorrect console observation: %q", got)
+				}
+			})
+		}
+	}
+	for _, console := range []string{"PRIVATE_SECRET", "error execution phase PRIVATE_PHASE: PRIVATE_TOKEN", "error execution phase preflight-extra: PRIVATE_TOKEN"} {
+		if got := nativeBootstrapKubeadmSummary(console); got != "" {
+			t.Fatalf("unknown console text became an observation: %q", got)
+		}
+	}
+}
+
+func TestNativeBootstrapKubeadmPreflightKeepsReasonsPrivate(t *testing.T) {
+	for _, check := range []string{
+		"CRI", "ContainerRuntimeVersion", "SystemVerification", "KubernetesVersion",
+		"KubeletVersion", "Swap", "ImagePull", "NumCPU", "Mem", "IsPrivilegedUser",
+	} {
+		t.Run(check, func(t *testing.T) {
+			console := "PRIVATE_REQUEST [ERROR " + check + "]: PRIVATE_CREDENTIAL"
+			want := "Bootstrap kubeadm preflight observation: " + check + "\n"
+			if got := nativeBootstrapKubeadmSummary(console); got != want {
+				t.Fatalf("unsafe or incorrect preflight observation: %q", got)
+			}
+		})
+	}
+	if got := nativeBootstrapKubeadmSummary("[ERROR PRIVATE_UNKNOWN]: PRIVATE_TOKEN"); got != "" {
+		t.Fatalf("unknown preflight reason was presented: %q", got)
+	}
+}

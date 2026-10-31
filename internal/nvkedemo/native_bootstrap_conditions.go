@@ -55,6 +55,7 @@ func nativeBootstrapConditionSummary(collection string, raw []byte) string {
 			fmt.Fprintf(&result, "Bootstrap controller observation: %s[%d] %s=%s\n", collection, index+1, name, status)
 			if context := nativeBootstrapFailureContext(value.Message); context != "" {
 				fmt.Fprintf(&result, "Bootstrap source failure context: %s\n", context)
+				result.WriteString(nativeBootstrapInitializationSummary(value.Message))
 			}
 		}
 	}
@@ -85,4 +86,66 @@ func nativeBootstrapFailureContext(message string) string {
 		}
 	}
 	return "unclassified"
+}
+
+// These literal source wrappers and kubeadm phase names are observations only.
+// The selected NVKE agent retains kubeadm's failure line in CurrentMessage;
+// neither that message nor its arguments or credentials may be published.
+func nativeBootstrapInitializationSummary(message string) string {
+	if nativeBootstrapFailureContext(message) != "control-plane-init" {
+		return ""
+	}
+	var result strings.Builder
+	for _, item := range []struct{ phrase, label string }{
+		{"failed to get kubeadm status:", "agent-status"},
+		{"failed to render kubeadm init config:", "config-render"},
+		{"failed to prepare kubeadm files on node ", "prerequisite-files"},
+		{"failed to execute kubeadm init on node ", "init-rpc"},
+		{"kubeadm init failed:", "kubeadm-command"},
+		{"CNI install failed:", "legacy-cni"},
+		{"failed to write kubeadm prerequisite files:", "agent-prerequisites"},
+		{"failed to write init config file", "agent-config"},
+		{"failed to parse join strings", "join-output"},
+	} {
+		if strings.Contains(message, item.phrase) {
+			fmt.Fprintf(&result, "Bootstrap initialization observation: %s\n", item.label)
+		}
+	}
+	result.WriteString(nativeBootstrapKubeadmSummary(message))
+	return result.String()
+}
+
+// Kubernetes v1.36.3's init phase owners and wait-control-plane wrappers own
+// these names. Match closed literal phrases only; arbitrary console text and
+// nested error fields never leave private storage. A match is not root-cause
+// proof and an unknown version or failure may yield no observation.
+func nativeBootstrapKubeadmSummary(message string) string {
+	var result strings.Builder
+	for _, phase := range []string{
+		"preflight", "certs", "kubeconfig", "etcd", "control-plane", "kubelet-start",
+		"wait-control-plane", "upload-config", "upload-certs", "mark-control-plane",
+		"bootstrap-token", "kubelet-finalize", "addon", "show-join-command",
+	} {
+		prefix := "error execution phase " + phase
+		if strings.Contains(message, prefix+":") || strings.Contains(message, prefix+"/") {
+			fmt.Fprintf(&result, "Bootstrap kubeadm phase observation: %s\n", phase)
+		}
+	}
+	for _, check := range []string{
+		"CRI", "ContainerRuntimeVersion", "SystemVerification", "KubernetesVersion",
+		"KubeletVersion", "Swap", "ImagePull", "NumCPU", "Mem", "IsPrivilegedUser",
+	} {
+		if strings.Contains(message, "[ERROR "+check+"]") {
+			fmt.Fprintf(&result, "Bootstrap kubeadm preflight observation: %s\n", check)
+		}
+	}
+	for _, item := range []struct{ phrase, label string }{
+		{"failed while waiting for the kubelet to start", "kubelet-start-wait"},
+		{"failed while waiting for the control plane to start", "control-plane-start-wait"},
+	} {
+		if strings.Contains(message, item.phrase) {
+			fmt.Fprintf(&result, "Bootstrap kubeadm wait observation: %s\n", item.label)
+		}
+	}
+	return result.String()
 }

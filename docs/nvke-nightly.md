@@ -75,7 +75,11 @@ Cluster and node conditions are read through NVKE's existing Service-proxy route
 using the owned bootstrap kubeconfig. Only selected condition names/statuses and
 static source failure-context labels are presented; identities and raw messages
 remain private. Context labels describe literal source phrases, not a decoded
-Temporal error or proven root cause. Unknown failures stay unclassified.
+Temporal error or proven root cause. Initialization observations also select closed
+nested activity labels and Kubernetes init-phase, preflight-check and wait labels
+from private condition messages and already retained owned serial snapshots. Raw
+error details remain private; these literal observations may be absent for unknown
+failures. Unknown failures stay unclassified.
 The Go E2E presenter queues these observations without blocking cleanup; it may
 drop them under backpressure. Plain writers retain bootstrap diagnostics privately.
 Ordinary diagnostic loss preserves the original failure; an unjoined observation
@@ -104,10 +108,15 @@ reached that gate after preparing the installer ISO, with 48,748 MiB available
 against 65,536 MiB required. The cleanup change still needs a complete hosted run
 to establish sufficient space for disk build and deployment.
 
-The explicit first hosted profile selects a 4-GiB site VM, 2 GiB per tenant VM,
+The hosted profile selects a 4-GiB site VM, 4 GiB per tenant VM,
 two vCPUs per guest and 1 GiB of host/QEMU headroom. Runtime admission observes
 actual available capacity; these settings are an initial experiment, not a proven
-minimum. The earlier [hosted experiment](https://github.com/depohmel/nvkr/actions/runs/40578231640)
+minimum. The previous 2-GiB tenant selection could not fit the requested
+reservations: the control plane requests 1 GiB for the system and the
+[selected NVKE source defaults Kubernetes reservation to 2 GiB](https://github.com/dsx-ai-factory/nvke/blob/ca3f7c025c1474d9b0b9a19a830a3006168c6de7/controller/internal/kubeadmconfig/render.go#L367).
+The worker requests 1 GiB for each. The 4-GiB selection removes that contradiction;
+it does not prove adequate scheduling headroom or explain the separate site-init
+failure. The earlier [hosted experiment](https://github.com/depohmel/nvkr/actions/runs/40578231640)
 demonstrated AMD64 KVM, a disk build and NVKE's separate VM test harness, but
 does not prove this native NVKR topology or its cleanup. That experiment also
 encountered severe disk pressure. A completed run of this exact workflow is
