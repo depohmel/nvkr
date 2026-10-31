@@ -45,7 +45,13 @@ without granting world-write access. Setup and final diagnostics record identity
 device ownership/mode/inode and ACLs. [Run 41132205486](https://github.com/dsx-ai-factory/nvkr/actions/runs/41132205486)
 completed the QCOW2 build, then failed the host-user KVM open before site launch
 despite its earlier one-time ACL grant. Its log does not identify the event that
-changed access; the persistent policy still requires full E2E validation.
+changed access. [Run 41141720839](https://github.com/depohmel/nvkr/actions/runs/41141720839)
+subsequently completed the full build, passed the later KVM admission and set up
+its owned network, then rejected NVKE's changed MachineImage image-URL placeholder.
+Its owned cleanup completed and final diagnostics retained runner ownership of
+KVM with mode `0660`. Boot projection now admits exactly one retained or current
+source placeholder, with both source architecture fixtures covered by regression
+tests. Full site and tenant E2E acceptance remains unverified.
 
 The Go test prints phase start/end/failure and child process start/exit
 observations. Once a minute, a parent-test heartbeat reports the last started
